@@ -14,6 +14,6 @@ public class Objective8 extends Objective {
 
     @Override
     protected void setupTasks(List<Task> tasks) {
-        tasks.add(new MinimumDurationTask(T.mins(15).msecs()));
+        tasks.add(new MinimumDurationTask(T.mins(1).msecs()));
     }
 }
