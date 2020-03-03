@@ -14,7 +14,7 @@ public class SMBDefaults {
     // autosens_min:0.7
 
     // USED IN AUTOSENS
-    public final static boolean rewind_resets_autosens = false; // reset autosensitivity to neutral for awhile after each pump rewind
+    public final static boolean rewind_resets_autosens = true; // reset autosensitivity to neutral for awhile after each pump rewind
 
     // USED IN TARGETS
     // by default the higher end of the target range is used only for avoiding bolus wizard overcorrections
@@ -44,7 +44,7 @@ public class SMBDefaults {
     public final static int remainingCarbsCap = 90; // max carbs we'll assume will absorb over 4h if we don't yet see carb absorption
     // WARNING: use SMB with caution: it can and will automatically bolus up to max_iob worth of extra insulin
     // enableUAM:true // enable detection of unannounced meal carb absorption
-    public final static boolean A52_risk_enable = true;
+    public final static boolean A52_risk_enable = false;
     //public final static boolean enableSMB_with_COB = true; // ***** default false in oref1 ***** enable supermicrobolus while COB is positive
     //public final static boolean enableSMB_with_temptarget = true; // ***** default false in oref1 ***** enable supermicrobolus for eating soon temp targets
     // *** WARNING *** DO NOT USE enableSMB_always or enableSMB_after_carbs with xDrip+, Libre, or similar
