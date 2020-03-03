@@ -12,7 +12,7 @@ import info.nightscout.androidaps.utils.T;
 
 public class Objective3 extends Objective {
 
-    public final int MANUAL_ENACTS_NEEDED = 1;
+    public final int MANUAL_ENACTS_NEEDED = 20;
 
     public Objective3() {
         super("openloop", R.string.objectives_openloop_objective, R.string.objectives_openloop_gate);
@@ -21,7 +21,7 @@ public class Objective3 extends Objective {
 
     @Override
     protected void setupTasks(List<Task> tasks) {
-        tasks.add(new MinimumDurationTask(T.mins(1).msecs()));
+        tasks.add(new MinimumDurationTask(T.days(7).msecs()));
         tasks.add(new Task(R.string.objectives_manualenacts) {
             @Override
             public boolean isCompleted() {
