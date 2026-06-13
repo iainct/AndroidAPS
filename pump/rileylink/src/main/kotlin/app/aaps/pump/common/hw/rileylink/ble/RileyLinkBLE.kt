@@ -12,6 +12,8 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import app.aaps.core.interfaces.configuration.Config
@@ -71,6 +73,13 @@ class RileyLinkBLE @Inject constructor(
     var isConnected = false
         private set
 
+    // --- Self-heal additions: recover the "green LED, no comms" stuck GATT in-process ---
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastForceReconnectMs = 0L
+    private val forceReconnectMinIntervalMs = 10_000L  // debounce: at most one recreate / 10 s
+    private val forceReconnectDelayMs = 600L           // let the BT stack settle before reconnect
+    // ------------------------------------------------------------------------------------
+
     @Inject fun onInit() {
         //aapsLogger.debug(LTag.PUMPBTCOMM, "BT Adapter: " + this.bluetoothAdapter);
         orangeLink.rileyLinkBLE = this
@@ -119,6 +128,10 @@ class RileyLinkBLE @Inject constructor(
     fun discoverServices(): Boolean {
         // shouldn't happen, but if it does we exit
         bluetoothConnectionGatt ?: return false
+
+        // Self-heal: clear Android's cached GATT service table before discovery so a stale
+        // cache (e.g. after the link briefly dropped) can't leave us "connected, no comms".
+        refreshDeviceCache(bluetoothConnectionGatt)
 
         return if (bluetoothConnectionGatt?.discoverServices() == true) {
             aapsLogger.warn(LTag.PUMPBTCOMM, "Starting to discover GATT Services.")
@@ -209,6 +222,61 @@ class RileyLinkBLE @Inject constructor(
         bluetoothConnectionGatt = null
     }
 
+    /**
+     * Self-heal: clears Android's cached GATT service table via the hidden
+     * BluetoothGatt.refresh() method (reflection). Not part of the public SDK,
+     * so it is guarded and may legitimately return false on some OS versions.
+     */
+    @SuppressLint("MissingPermission")
+    private fun refreshDeviceCache(gatt: BluetoothGatt?): Boolean {
+        gatt ?: return false
+        return try {
+            val refresh = gatt.javaClass.getMethod("refresh")
+            val result = (refresh.invoke(gatt) as? Boolean) == true
+            aapsLogger.warn(LTag.PUMPBTCOMM, "refreshDeviceCache() returned $result")
+            result
+        } catch (e: Exception) {
+            aapsLogger.error(LTag.PUMPBTCOMM, "refreshDeviceCache() failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Self-heal: full teardown + fresh GATT, the in-process equivalent of force-closing
+     * and reopening AAPS. Releases the GATT client (close), then re-creates it.
+     * Debounced so a burst of failures cannot trigger a reconnect storm. Does NOT
+     * suppress any state or alarm; if recovery fails, normal handling still runs.
+     */
+    @SuppressLint("MissingPermission")
+    fun forceReconnect(reason: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastForceReconnectMs < forceReconnectMinIntervalMs) {
+            aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect skipped (debounced): $reason")
+            return
+        }
+        lastForceReconnectMs = now
+        aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect: $reason")
+
+        isConnected = false
+        try {
+            bluetoothConnectionGatt?.disconnect()
+        } catch (e: Exception) {
+            aapsLogger.error(LTag.PUMPBTCOMM, "forceReconnect disconnect failed: ${e.message}")
+        }
+        close()                 // releases the GATT client and nulls bluetoothConnectionGatt
+        manualDisconnect = false
+
+        // connectGattInternal() must run on the UI thread (see its own comment).
+        mainHandler.postDelayed({
+            if (rileyLinkDevice != null) {
+                aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect: re-creating GATT")
+                connectGattInternal()
+            } else {
+                aapsLogger.error(LTag.PUMPBTCOMM, "forceReconnect: rileyLinkDevice is null, cannot reconnect")
+            }
+        }, forceReconnectDelayMs)
+    }
+
     @SuppressLint("MissingPermission")
     fun setNotificationBlocking(serviceUUID: UUID?, charaUUID: UUID?): BLECommOperationResult {
         val retValue = BLECommOperationResult()
@@ -225,6 +293,7 @@ class RileyLinkBLE @Inject constructor(
                 // Catch if the service is not supported by the BLE device
                 retValue.resultCode = BLECommOperationResult.RESULT_NONE
                 aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                forceReconnect("getService==null (stale GATT cache / no comms) in setNotificationBlocking")
                 // TODO: 11/07/2016 UI update for user
                 // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
             } else {
@@ -272,6 +341,7 @@ class RileyLinkBLE @Inject constructor(
                 // e.g. when the user switches from portrait to landscape.
                 retValue.resultCode = BLECommOperationResult.RESULT_NONE
                 aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                forceReconnect("getService==null (stale GATT cache / no comms) in writeCharacteristicBlocking")
                 // TODO: 11/07/2016 UI update for user
                 // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
             } else {
@@ -308,6 +378,7 @@ class RileyLinkBLE @Inject constructor(
                 // Catch if the service is not supported by the BLE device
                 retValue.resultCode = BLECommOperationResult.RESULT_NONE
                 aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                forceReconnect("getService==null (stale GATT cache / no comms) in readCharacteristicBlocking")
                 // TODO: 11/07/2016 UI update for user
                 // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
             } else {
