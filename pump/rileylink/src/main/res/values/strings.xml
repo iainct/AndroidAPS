@@ -17,6 +17,7 @@
     <string name="medtronic_pump_frequency_worldwide">Worldwide (868 Mhz)</string>
 
     <!-- RL BLE Config -->
+    <string name="riley_link_ble_self_heal" comment="%1$s=technical trigger reason, example: 3 consecutive BLE op failures in writeCharacteristicBlocking. Shown when AAPS automatically resets a stuck RileyLink Bluetooth connection.">RileyLink self-heal: Bluetooth reconnect forced (%1$s)</string>
     <string name="riley_link_ble_config_scan_scanning">Scanning</string>
     <string name="riley_link_ble_config_connected_never">Never</string>
 

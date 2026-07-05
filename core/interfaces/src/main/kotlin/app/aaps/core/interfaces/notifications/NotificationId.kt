@@ -84,6 +84,9 @@ enum class NotificationId(
     // Pump — Medtronic
     MEDTRONIC_PUMP_ALARM(URGENT, PUMP),
     RILEYLINK_CONNECTION(NORMAL, PUMP),
+    // Diagnostic breadcrumb: the RileyLink BLE self-heal forced a GATT reconnect. Survives in the
+    // notification list so a "stuck RileyLink" episode can be attributed even after log rotation.
+    RILEYLINK_SELF_HEAL(LOW, PUMP),
     MDT_INVALID_HISTORY_DATA(NORMAL, PUMP),
 
     // Pump — Insight

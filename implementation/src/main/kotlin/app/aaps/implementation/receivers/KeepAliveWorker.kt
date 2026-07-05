@@ -151,7 +151,7 @@ class KeepAliveWorker @AssistedInject constructor(
         localAlertUtils.checkStaleBGAlert()
         checkPump()
         checkAPS()
-        maintenance.deleteLogs(30)
+        maintenance.deleteLogs(60)
         workerDbStatus()
         workerActiveStatus()
         databaseCleanup()

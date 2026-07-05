@@ -148,7 +148,7 @@ class KeepAliveWorkerTest : TestBaseWithProfile() {
         verify(dstHelper).dstCheck()
         verify(localAlertUtils).shortenSnoozeInterval()
         verify(localAlertUtils).checkStaleBGAlert()
-        verify(maintenance).deleteLogs(30)
+        verify(maintenance).deleteLogs(60)
     }
 
     @Test

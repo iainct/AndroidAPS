@@ -19,10 +19,13 @@ import androidx.core.content.ContextCompat
 import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
+import app.aaps.core.interfaces.notifications.NotificationId
+import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.utils.extensions.connectGattCompat
 import app.aaps.core.utils.pump.ByteUtil
 import app.aaps.core.utils.pump.ThreadUtil
+import app.aaps.pump.common.hw.rileylink.R
 import app.aaps.pump.common.hw.rileylink.RileyLinkConst
 import app.aaps.pump.common.hw.rileylink.RileyLinkUtil
 import app.aaps.pump.common.hw.rileylink.ble.data.GattAttributes
@@ -56,7 +59,8 @@ class RileyLinkBLE @Inject constructor(
     private val rileyLinkUtil: RileyLinkUtil,
     private val preferences: Preferences,
     private val orangeLink: OrangeLinkImpl,
-    private val config: Config
+    private val config: Config,
+    private val notificationManager: NotificationManager
 ) {
 
     private val gattDebugEnabled = true
@@ -78,6 +82,8 @@ class RileyLinkBLE @Inject constructor(
     private var lastForceReconnectMs = 0L
     private val forceReconnectMinIntervalMs = 10_000L  // debounce: at most one recreate / 10 s
     private val forceReconnectDelayMs = 600L           // let the BT stack settle before reconnect
+    private var consecutiveBleOpFailures = 0           // watchdog: ops guarded by gattOperationSema, so no sync needed
+    private val consecutiveBleOpFailureThreshold = 3
     // ------------------------------------------------------------------------------------
 
     @Inject fun onInit() {
@@ -256,6 +262,9 @@ class RileyLinkBLE @Inject constructor(
         }
         lastForceReconnectMs = now
         aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect: $reason")
+        // Log rotation only keeps ~2 days; the notification is the durable breadcrumb that lets a
+        // later "stuck RileyLink" report be attributed to the self-heal firing (or not firing).
+        notificationManager.post(NotificationId.RILEYLINK_SELF_HEAL, R.string.riley_link_ble_self_heal, reason)
 
         isConnected = false
         try {
@@ -275,6 +284,29 @@ class RileyLinkBLE @Inject constructor(
                 aapsLogger.error(LTag.PUMPBTCOMM, "forceReconnect: rileyLinkDevice is null, cannot reconnect")
             }
         }, forceReconnectDelayMs)
+    }
+
+    /**
+     * Self-heal watchdog: a zombie GATT often keeps its service table (so getService() != null)
+     * while every operation just times out. Count consecutive timed-out/interrupted operations
+     * and force a reconnect once the threshold is hit; any success resets the counter.
+     */
+    private fun trackBleOperationResult(resultCode: Int, where: String) {
+        when (resultCode) {
+            BLECommOperationResult.RESULT_SUCCESS     -> consecutiveBleOpFailures = 0
+
+            BLECommOperationResult.RESULT_TIMEOUT,
+            BLECommOperationResult.RESULT_INTERRUPTED -> {
+                consecutiveBleOpFailures++
+                aapsLogger.warn(LTag.PUMPBTCOMM, "BLE op failure $consecutiveBleOpFailures/$consecutiveBleOpFailureThreshold in $where")
+                if (consecutiveBleOpFailures >= consecutiveBleOpFailureThreshold) {
+                    consecutiveBleOpFailures = 0
+                    forceReconnect("$consecutiveBleOpFailureThreshold consecutive BLE op failures, last in $where")
+                }
+            }
+
+            else                                      -> Unit // BUSY/NOT_CONFIGURED/NONE: not evidence of a zombie GATT (NONE already triggers forceReconnect directly)
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -318,6 +350,7 @@ class RileyLinkBLE @Inject constructor(
             mCurrentOperation = null
             gattOperationSema.release()
         }
+        trackBleOperationResult(retValue.resultCode, "setNotificationBlocking")
         return retValue
     }
 
@@ -359,6 +392,7 @@ class RileyLinkBLE @Inject constructor(
             mCurrentOperation = null
             gattOperationSema.release()
         }
+        trackBleOperationResult(retValue.resultCode, "writeCharacteristicBlocking")
         return retValue
     }
 
@@ -399,6 +433,7 @@ class RileyLinkBLE @Inject constructor(
         mCurrentOperation = null
         gattOperationSema.release()
 
+        trackBleOperationResult(retValue.resultCode, "readCharacteristicBlocking")
         return retValue
     }
 
