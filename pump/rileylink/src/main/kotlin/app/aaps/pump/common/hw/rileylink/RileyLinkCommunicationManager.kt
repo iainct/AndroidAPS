@@ -5,6 +5,7 @@ import app.aaps.core.interfaces.logging.LTag
 import app.aaps.core.interfaces.plugin.ActivePlugin
 import app.aaps.core.interfaces.pump.defs.PumpDeviceState
 import app.aaps.core.interfaces.utils.Round.isSame
+import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.utils.pump.ByteUtil.shortHexString
 import app.aaps.pump.common.hw.rileylink.ble.RFSpy
@@ -22,6 +23,7 @@ import app.aaps.pump.common.hw.rileylink.service.RileyLinkServiceData
 import app.aaps.pump.common.hw.rileylink.service.tasks.ServiceTaskExecutor
 import app.aaps.pump.common.hw.rileylink.service.tasks.WakeAndTuneTask
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import javax.inject.Provider
 
 /**
@@ -296,6 +298,27 @@ abstract class RileyLinkCommunicationManager<T : RLMessage>(
         preferences.put(RileyLinkLongKey.LastGoodDeviceCommunicationTime, lastGoodReceiverCommunicationTime)
 
         getPumpDevice().setLastCommunicationToNow()
+        getPumpDevice().rileyLinkService?.rileyLinkBLE?.onPumpCommsRestored()
+    }
+
+    /**
+     * Escalation for sustained pump silence: re-initialise the RileyLink the way an app restart
+     * does. Only relevant once the pump has been unreachable for the user's "pump unreachable"
+     * alert threshold; [app.aaps.pump.common.hw.rileylink.ble.RileyLinkBLE.selfHealAfterPumpSilence]
+     * applies the back-off, so this may safely be called on every failed connection attempt.
+     *
+     * @return true if a re-init was started, so the caller can skip weaker remedies this round
+     */
+    protected fun maybeSelfHealAfterPumpSilence(): Boolean {
+        val lastGood = preferences.get(RileyLinkLongKey.LastGoodDeviceCommunicationTime)
+        // 0 means we have never reached the pump (fresh install, cleared data): there is no outage
+        // to measure and the address/serial may not even be configured yet.
+        if (lastGood == 0L) return false
+        val silentForMs = System.currentTimeMillis() - lastGood
+        if (silentForMs <= 0L) return false // clock moved backwards
+        // TimeUnit rather than core's T helper: the class's own type parameter is also named T.
+        val thresholdMs = TimeUnit.MINUTES.toMillis(preferences.get(IntKey.AlertsPumpUnreachableThreshold).toLong())
+        return getPumpDevice().rileyLinkService?.rileyLinkBLE?.selfHealAfterPumpSilence(silentForMs, thresholdMs) == true
     }
 
     fun clearNotConnectedCount() {

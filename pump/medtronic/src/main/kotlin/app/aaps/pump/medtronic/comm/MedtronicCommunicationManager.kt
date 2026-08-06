@@ -130,10 +130,18 @@ class MedtronicCommunicationManager @Inject constructor(
             SystemClock.sleep(1000)
         }
         if (state !== PumpDeviceState.PumpUnreachable) medtronicPumpStatus.pumpDeviceState = PumpDeviceState.PumpUnreachable
+        // canPreventTuneUp is set when we are called from tryToConnectToDevice(), i.e. from within
+        // InitializePumpManagerTask — which is itself part of the self-heal re-init. Skipping both
+        // escalations there keeps the recovery from re-entering itself.
         if (!canPreventTuneUp) {
-            val diff = System.currentTimeMillis() - medtronicPumpStatus.lastConnection
-            if (diff > RILEYLINK_TIMEOUT) {
-                serviceTaskExecutor.startTask(wakeAndTuneTaskProvider.get())
+            // A WakeAndTune only re-tunes the frequency, which cannot recover a wedged RileyLink
+            // radio state; prefer the stronger remedy and never run both in one pass, since tearing
+            // the GATT down underneath a running frequency scan would just fail the scan.
+            if (!maybeSelfHealAfterPumpSilence()) {
+                val diff = System.currentTimeMillis() - medtronicPumpStatus.lastConnection
+                if (diff > RILEYLINK_TIMEOUT) {
+                    serviceTaskExecutor.startTask(wakeAndTuneTaskProvider.get())
+                }
             }
         }
         return false

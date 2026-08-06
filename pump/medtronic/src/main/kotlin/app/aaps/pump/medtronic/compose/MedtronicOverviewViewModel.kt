@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.insulin.ConcentrationHelper
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
@@ -82,6 +84,7 @@ class MedtronicOverviewViewModel @Inject constructor(
     private val rxBus: RxBus,
     private val dateUtil: DateUtil,
     private val aapsLogger: AAPSLogger,
+    private val config: Config,
     private val resetRileyLinkConfigurationTaskProvider: Provider<ResetRileyLinkConfigurationTask>,
     private val wakeAndTuneTaskProvider: Provider<WakeAndTuneTask>,
     @ApplicationContext private val context: Context
@@ -368,6 +371,31 @@ class MedtronicOverviewViewModel @Inject constructor(
                 onClick = {
                     serviceTaskExecutor.startTask(resetRileyLinkConfigurationTaskProvider.get())
                     _events.tryEmit(MedtronicOverviewEvent.ShowSnackbar(rh.gs(RileyLinkR.string.rileylink_config_reset)))
+                }
+            ),
+            PumpAction(
+                label = rh.gs(R.string.medtronic_custom_action_test_self_heal),
+                icon = Icons.Filled.HealthAndSafety,
+                category = ActionCategory.MANAGEMENT,
+                // Diagnostic only: a real pump-silence wedge is rare, so this is the only practical
+                // way to verify the recovery works. Hidden from release builds.
+                visible = config.isEngineeringMode() || config.isDev(),
+                onClick = {
+                    val rileyLinkBLE = medtronicPumpPlugin.rileyLinkService?.rileyLinkBLE
+                    if (rileyLinkBLE == null) {
+                        emitNotConfiguredDialog()
+                    } else {
+                        val started = rileyLinkBLE.forceSelfHealNow("manual test from Medtronic overview")
+                        aapsLogger.debug(LTag.PUMP, "Manual RileyLink self-heal test, started=$started")
+                        _events.tryEmit(
+                            MedtronicOverviewEvent.ShowSnackbar(
+                                rh.gs(
+                                    if (started) R.string.medtronic_custom_action_test_self_heal_started
+                                    else R.string.medtronic_custom_action_test_self_heal_debounced
+                                )
+                            )
+                        )
+                    }
                 }
             )
         )

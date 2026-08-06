@@ -15,6 +15,9 @@
     <string name="medtronic_custom_action_wake_and_tune">Wake and Tune Up</string>
     <string name="medtronic_custom_action_clear_bolus_block">Clear Bolus Block</string>
     <string name="medtronic_custom_action_reset_rileylink">Reset RileyLink</string>
+    <string name="medtronic_custom_action_test_self_heal">Test RileyLink Self-Heal</string>
+    <string name="medtronic_custom_action_test_self_heal_started">RileyLink self-heal started. Comms should recover within about a minute.</string>
+    <string name="medtronic_custom_action_test_self_heal_debounced">A RileyLink reconnect just ran. Wait a few seconds and try again.</string>
     <string name="medtronic_pump_battery_select">Battery Type (Power View)</string>
     <string name="medtronic_pump_battery_no">Not selected (Simple view)</string>
     <string name="medtronic_pump_battery_alkaline">Alkaline (Extended view)</string>
