@@ -37,6 +37,17 @@
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault">
 
+        <!-- androidx.wear.watchfacepush pulls in a hard requirement on the "wear-sdk" shared
+             library, which only Wear OS 6 provides. Left as required the whole app cannot be
+             installed on older watches (INSTALL_FAILED_MISSING_SHARED_LIBRARY), even though
+             wearMinSdk is 30 and every Watch Face Push call is already behind
+             WatchFacePushHelper.isSupported() (SDK_INT >= 36). Marking it optional keeps the app
+             installable there; the classes are simply never loaded. -->
+        <uses-library
+            android:name="wear-sdk"
+            android:required="false"
+            tools:replace="android:required" />
+
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="false" />

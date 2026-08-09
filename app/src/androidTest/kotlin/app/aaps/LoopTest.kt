@@ -177,7 +177,8 @@ class LoopTest : HiltInstrumentedTest() {
         glucoseValues += GV(timestamp = now - 0 * 60000, value = 150.0, raw = 0.0, noise = null, trendArrow = TrendArrow.FORTY_FIVE_UP, sourceSensor = SourceSensor.RANDOM)
         assertThat(persistenceLayer.insertCgmSourceData(Sources.Random, glucoseValues, emptyList(), null).inserted.size).isEqualTo(6)
 
-        // GV insertion triggers calculation via observeChanges(GV) → scheduleHistoryDataChange (5s debounce)
+        // GV insertion triggers calculation via observeChanges(GV) → scheduleHistoryDataChange
+        // (short debounce here: these readings are at "now", so they take the new-BG path)
         // The IOB/COB autosens phase may exit early ("No bucketed data") so EventAutosensCalculationFinished
         // is not guaranteed. Wait for EventAPSCalculationFinished which fires when loop runs.
         assertThat(rxHelper.waitFor(EventAPSCalculationFinished::class.java, maxSeconds = 60, comment = "step6").first).isTrue()

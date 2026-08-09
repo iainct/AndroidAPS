@@ -1,7 +1,6 @@
 package app.aaps.workflow
 
 import android.content.Context
-import android.os.SystemClock
 import androidx.hilt.work.HiltWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -456,8 +455,11 @@ class PrepareGraphDataWorker @AssistedInject constructor(
                 aapsLogger.debug(LTag.AUTOSENS) { autosensData.toString() }
             }
             data.iobCobCalculator.ads = ads
+            // Off the worker thread so a slow subscriber cannot hold up the chain, but with no
+            // delay: everything written above is visible to the subscribers (Thread.start() and
+            // the bus both establish happens-before), so the old 1 s sleep only postponed the
+            // watch, the widget and the loop.
             Thread {
-                SystemClock.sleep(1000)
                 rxBus.send(EventAutosensCalculationFinished(data.triggeredByNewBG))
             }.start()
         } finally {
@@ -640,8 +642,8 @@ class PrepareGraphDataWorker @AssistedInject constructor(
                 aapsLogger.debug(LTag.AUTOSENS, autosensData.toString())
             }
             data.iobCobCalculator.ads = ads
+            // See the note on the Oref1 path above: async dispatch is kept, the 1 s sleep is not.
             Thread {
-                SystemClock.sleep(1000)
                 rxBus.send(EventAutosensCalculationFinished(data.triggeredByNewBG))
             }.start()
         } finally {

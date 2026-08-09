@@ -451,7 +451,31 @@ class IobCobCalculatorPlugin @Inject constructor(
         var triggeredByNewBG: Boolean
     )
 
+    companion object {
+
+        /** Coalescing window for bulk history changes (pump history read, NS sync) */
+        private const val HISTORY_DEBOUNCE_MS = 5_000L
+
+        /** Short window for a single new reading at "now" — just enough to merge the rows one reading writes */
+        private const val NEW_BG_DEBOUNCE_MS = 500L
+    }
+
     private var scheduledData: ScheduledHistoryData? = null
+
+    /**
+     * How long to wait before running the calculation.
+     *
+     * The long window exists to coalesce bursts: a pump history read or an NS sync writes dozens of
+     * old records at once, and every one of them would otherwise start a fresh calculation (the work
+     * is enqueued with REPLACE, so a restart throws away the running one).
+     *
+     * A plain new reading has no burst to coalesce — it is a single row at "now" — so waiting the
+     * full window only delays the watch, the widget and the loop by five seconds for nothing.
+     * Anything reaching further back keeps the long window.
+     */
+    private fun debounceMsFor(data: ScheduledHistoryData): Long =
+        if (data.triggeredByNewBG && dateUtil.now() - data.oldDataTimestamp < T.mins(15).msecs()) NEW_BG_DEBOUNCE_MS
+        else HISTORY_DEBOUNCE_MS
 
     @Synchronized
     fun scheduleHistoryDataChange(oldDataTimestamp: Long, reloadBgData: Boolean, triggeredByNewBG: Boolean = false) {
@@ -473,7 +497,7 @@ class IobCobCalculatorPlugin @Inject constructor(
                         scheduledData = null
                         scheduledHistoryPost = null
                     }
-                }, 5L, TimeUnit.SECONDS
+                }, debounceMsFor(data), TimeUnit.MILLISECONDS
             )
         } else {
             // asked reload is newer -> adjust params only
