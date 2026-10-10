@@ -12,15 +12,21 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
+import app.aaps.core.interfaces.notifications.NotificationId
+import app.aaps.core.interfaces.notifications.NotificationManager
 import app.aaps.core.keys.interfaces.Preferences
+import app.aaps.core.keys.interfaces.TextRef
 import app.aaps.core.utils.extensions.connectGattCompat
 import app.aaps.core.utils.pump.ByteUtil
 import app.aaps.core.utils.pump.ThreadUtil
+import app.aaps.pump.common.hw.rileylink.R
 import app.aaps.pump.common.hw.rileylink.RileyLinkConst
 import app.aaps.pump.common.hw.rileylink.RileyLinkUtil
 import app.aaps.pump.common.hw.rileylink.ble.data.GattAttributes
@@ -56,7 +62,8 @@ class RileyLinkBLE(
     private val rileyLinkUtil: RileyLinkUtil,
     private val preferences: Preferences,
     private val orangeLink: OrangeLinkImpl,
-    private val config: Config
+    private val config: Config,
+    private val notificationManager: NotificationManager
 ) {
 
     private val gattDebugEnabled = true
@@ -72,6 +79,22 @@ class RileyLinkBLE(
     private var radioResponseCountNotified: Runnable? = null
     var isConnected = false
         private set
+
+    // --- Self-heal additions: recover the "green LED, no comms" stuck GATT in-process ---
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastForceReconnectMs = 0L
+    private val forceReconnectMinIntervalMs = 10_000L  // debounce: at most one recreate / 10 s
+    private val forceReconnectDelayMs = 600L           // let the BT stack settle before reconnect
+    private var consecutiveBleOpFailures = 0           // watchdog: ops guarded by gattOperationSema, so no sync needed
+    private val consecutiveBleOpFailureThreshold = 3
+
+    // Pump-silence (radio-layer) self-heal state. Separate from the BLE-op watchdog above: here the
+    // GATT is healthy and the RileyLink answers us, it just cannot reach the pump. Deliberately slow
+    // so a genuine outage (flat pump battery, RileyLink left behind) cannot turn into a reconnect
+    // storm - see selfHealAfterPumpSilence().
+    private var lastPumpSilenceHealMs = 0L             // elapsedRealtime of the last re-init, 0 = none yet
+    private var pumpSilenceHealAttempts = 0            // consecutive attempts without comms coming back (breadcrumb only)
+    // ------------------------------------------------------------------------------------
 
     private fun isAnyRileyLinkServiceFound(service: BluetoothGattService): Boolean {
         val found = GattAttributes.isRileyLink(service.uuid)
@@ -116,6 +139,10 @@ class RileyLinkBLE(
     fun discoverServices(): Boolean {
         // shouldn't happen, but if it does we exit
         bluetoothConnectionGatt ?: return false
+
+        // Self-heal: clear Android's cached GATT service table before discovery so a stale
+        // cache (e.g. after the link briefly dropped) can't leave us "connected, no comms".
+        refreshDeviceCache(bluetoothConnectionGatt)
 
         return if (bluetoothConnectionGatt?.discoverServices() == true) {
             aapsLogger.warn(LTag.PUMPBTCOMM, "Starting to discover GATT Services.")
@@ -206,6 +233,158 @@ class RileyLinkBLE(
         bluetoothConnectionGatt = null
     }
 
+    /**
+     * Self-heal: clears Android's cached GATT service table via the hidden
+     * BluetoothGatt.refresh() method (reflection). Not part of the public SDK,
+     * so it is guarded and may legitimately return false on some OS versions.
+     */
+    @SuppressLint("MissingPermission")
+    private fun refreshDeviceCache(gatt: BluetoothGatt?): Boolean {
+        gatt ?: return false
+        return try {
+            val refresh = gatt.javaClass.getMethod("refresh")
+            val result = (refresh.invoke(gatt) as? Boolean) == true
+            aapsLogger.warn(LTag.PUMPBTCOMM, "refreshDeviceCache() returned $result")
+            result
+        } catch (e: Exception) {
+            aapsLogger.error(LTag.PUMPBTCOMM, "refreshDeviceCache() failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Self-heal: full teardown + fresh GATT, the in-process equivalent of force-closing
+     * and reopening AAPS. Releases the GATT client (close), then re-creates it.
+     * Debounced so a burst of failures cannot trigger a reconnect storm. Does NOT
+     * suppress any state or alarm; if recovery fails, normal handling still runs.
+     *
+     * @return true if the teardown/recreate was actually started, false if debounced away.
+     */
+    @SuppressLint("MissingPermission")
+    fun forceReconnect(reason: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastForceReconnectMs < forceReconnectMinIntervalMs) {
+            aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect skipped (debounced): $reason")
+            return false
+        }
+        lastForceReconnectMs = now
+        aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect: $reason")
+        // Log rotation only keeps a few days; the notification is the durable breadcrumb that lets a
+        // later "stuck RileyLink" report be attributed to the self-heal firing (or not firing).
+        notificationManager.post(NotificationId.RILEYLINK_SELF_HEAL, TextRef.AndroidRes(R.string.riley_link_ble_self_heal, listOf(reason)))
+
+        isConnected = false
+        try {
+            bluetoothConnectionGatt?.disconnect()
+        } catch (e: Exception) {
+            aapsLogger.error(LTag.PUMPBTCOMM, "forceReconnect disconnect failed: ${e.message}")
+        }
+        close()                 // releases the GATT client and nulls bluetoothConnectionGatt
+        manualDisconnect = false
+
+        // connectGattInternal() must run on the UI thread (see its own comment).
+        mainHandler.postDelayed({
+            if (rileyLinkDevice != null) {
+                aapsLogger.warn(LTag.PUMPBTCOMM, "forceReconnect: re-creating GATT")
+                connectGattInternal()
+            } else {
+                aapsLogger.error(LTag.PUMPBTCOMM, "forceReconnect: rileyLinkDevice is null, cannot reconnect")
+            }
+        }, forceReconnectDelayMs)
+        return true
+    }
+
+    /**
+     * Self-heal for sustained *pump* silence, i.e. the radio layer rather than the GATT layer.
+     * Recovers the state where the RileyLink is connected and answering us over BLE (so
+     * [trackBleOperationResult] and the getService()==null checks never fire) yet every pump
+     * wake-up times out - observed as a 94-minute blackout that only a full app restart cleared.
+     *
+     * Recreating the GATT client cascades into the same re-initialisation an app restart performs:
+     * connectGattInternal -> BluetoothConnected -> DiscoverGattServicesTask -> onServicesDiscovered
+     * -> RileyLinkReady -> enableNotifications + RFSpy.initializeRileyLink + InitializePumpManagerTask
+     * (frequency set + pump reconnect).
+     *
+     * Rate limiting, so a real outage cannot cause a reset storm:
+     *  - nothing happens until the pump has been silent for [thresholdMs] (the user's
+     *    "pump unreachable" alert threshold), so the first attempt lands with that alert rather
+     *    than during the ordinary retry noise of a brief dropout;
+     *  - afterwards at most one attempt per [thresholdMs], so a flat pump battery costs one
+     *    re-init every 30 min (at the default threshold) for as long as it stays flat;
+     *  - [onPumpCommsRestored] clears the interval as soon as the pump answers again.
+     *
+     * @param silentForMs how long the pump has been silent
+     * @param thresholdMs the pump-unreachable threshold, used as both the initial delay and the
+     *                    minimum interval between attempts
+     * @return true if a re-init was started
+     */
+    fun selfHealAfterPumpSilence(silentForMs: Long, thresholdMs: Long): Boolean {
+        if (thresholdMs <= 0L || silentForMs < thresholdMs) return false
+
+        val now = SystemClock.elapsedRealtime()
+        if (lastPumpSilenceHealMs != 0L && now - lastPumpSilenceHealMs < thresholdMs) {
+            aapsLogger.debug(
+                LTag.PUMPBTCOMM,
+                "pump-silence self-heal held off: ${(now - lastPumpSilenceHealMs) / 60_000} of ${thresholdMs / 60_000} min since attempt $pumpSilenceHealAttempts"
+            )
+            return false
+        }
+
+        // Only count an attempt if the reconnect really started, otherwise a debounced call would
+        // waste the slot and push the next attempt a further interval out.
+        val started = forceReconnect("no pump comms for ${silentForMs / 60_000} min, radio re-init attempt ${pumpSilenceHealAttempts + 1}")
+        if (started) {
+            lastPumpSilenceHealMs = now
+            pumpSilenceHealAttempts++
+        }
+        return started
+    }
+
+    /** Pump answered again: allow the next outage to self-heal immediately once past the threshold. */
+    fun onPumpCommsRestored() {
+        if (pumpSilenceHealAttempts == 0 && lastPumpSilenceHealMs == 0L) return
+        aapsLogger.debug(LTag.PUMPBTCOMM, "pump comms restored, clearing self-heal interval (was attempt $pumpSilenceHealAttempts)")
+        pumpSilenceHealAttempts = 0
+        lastPumpSilenceHealMs = 0L
+    }
+
+    /**
+     * Manual trigger for the same recovery [selfHealAfterPumpSilence] performs, bypassing the
+     * silence threshold and interval. Intended for verifying on-device that the re-init sequence
+     * actually recovers comms, since a real occurrence is rare and unpredictable.
+     *
+     * @return true if the re-init was started, false if the 10 s [forceReconnect] debounce blocked it
+     */
+    fun forceSelfHealNow(reason: String): Boolean {
+        // Clear the interval so a manual test never masks a subsequent genuine outage.
+        lastPumpSilenceHealMs = 0L
+        pumpSilenceHealAttempts = 0
+        return forceReconnect(reason)
+    }
+
+    /**
+     * Self-heal watchdog: a zombie GATT often keeps its service table (so getService() != null)
+     * while every operation just times out. Count consecutive timed-out/interrupted operations
+     * and force a reconnect once the threshold is hit; any success resets the counter.
+     */
+    private fun trackBleOperationResult(resultCode: Int, where: String) {
+        when (resultCode) {
+            BLECommOperationResult.RESULT_SUCCESS     -> consecutiveBleOpFailures = 0
+
+            BLECommOperationResult.RESULT_TIMEOUT,
+            BLECommOperationResult.RESULT_INTERRUPTED -> {
+                consecutiveBleOpFailures++
+                aapsLogger.warn(LTag.PUMPBTCOMM, "BLE op failure $consecutiveBleOpFailures/$consecutiveBleOpFailureThreshold in $where")
+                if (consecutiveBleOpFailures >= consecutiveBleOpFailureThreshold) {
+                    consecutiveBleOpFailures = 0
+                    forceReconnect("$consecutiveBleOpFailureThreshold consecutive BLE op failures, last in $where")
+                }
+            }
+
+            else                                      -> Unit // BUSY/NOT_CONFIGURED/NONE: not evidence of a zombie GATT (NONE already triggers forceReconnect directly)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun setNotificationBlocking(serviceUUID: UUID?, charaUUID: UUID?): BLECommOperationResult {
         val retValue = BLECommOperationResult()
@@ -223,6 +402,7 @@ class RileyLinkBLE(
                     // Catch if the service is not supported by the BLE device
                     retValue.resultCode = BLECommOperationResult.RESULT_NONE
                     aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                    forceReconnect("getService==null (stale GATT cache / no comms) in setNotificationBlocking")
                     // TODO: 11/07/2016 UI update for user
                     // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
                 } else {
@@ -248,6 +428,7 @@ class RileyLinkBLE(
         } finally {
             releaseGattOperation()
         }
+        trackBleOperationResult(retValue.resultCode, "setNotificationBlocking")
         return retValue
     }
 
@@ -284,6 +465,7 @@ class RileyLinkBLE(
                     // e.g. when the user switches from portrait to landscape.
                     retValue.resultCode = BLECommOperationResult.RESULT_NONE
                     aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                    forceReconnect("getService==null (stale GATT cache / no comms) in writeCharacteristicBlocking")
                     // TODO: 11/07/2016 UI update for user
                     // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
                 } else {
@@ -302,6 +484,7 @@ class RileyLinkBLE(
         } finally {
             releaseGattOperation()
         }
+        trackBleOperationResult(retValue.resultCode, "writeCharacteristicBlocking")
         return retValue
     }
 
@@ -322,6 +505,7 @@ class RileyLinkBLE(
                     // Catch if the service is not supported by the BLE device
                     retValue.resultCode = BLECommOperationResult.RESULT_NONE
                     aapsLogger.error(LTag.PUMPBTCOMM, "BT Device not supported")
+                    forceReconnect("getService==null (stale GATT cache / no comms) in readCharacteristicBlocking")
                     // TODO: 11/07/2016 UI update for user
                     // xyz rileyLinkServiceData.setServiceState(RileyLinkServiceState.BluetoothError, RileyLinkError.NoBluetoothAdapter);
                 } else {
@@ -343,6 +527,7 @@ class RileyLinkBLE(
             releaseGattOperation()
         }
 
+        trackBleOperationResult(retValue.resultCode, "readCharacteristicBlocking")
         return retValue
     }
 

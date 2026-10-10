@@ -230,7 +230,12 @@ enum class NotificationId(
 
     // One command has been running in the queue for too long, so nothing else reaches the pump (#5209).
     // Appended at the END for the same reason as above.
-    PUMP_DRIVER_NOT_RESPONDING(URGENT, PUMP);
+    PUMP_DRIVER_NOT_RESPONDING(URGENT, PUMP),
+
+    // Diagnostic breadcrumb: the RileyLink BLE self-heal forced a GATT reconnect. Survives in the
+    // notification list so a "stuck RileyLink" episode can be attributed even after log rotation.
+    // Appended at the END for the same reason as above.
+    RILEYLINK_SELF_HEAL(LOW, PUMP);
 
     companion object {
 

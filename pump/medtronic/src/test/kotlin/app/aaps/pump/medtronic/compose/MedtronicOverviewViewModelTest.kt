@@ -1,6 +1,7 @@
 package app.aaps.pump.medtronic.compose
 
 import android.content.Context
+import app.aaps.core.interfaces.configuration.Config
 import app.aaps.core.interfaces.insulin.ConcentrationHelper
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.pump.PumpRate
@@ -67,6 +68,7 @@ internal class MedtronicOverviewViewModelTest {
     private val medtronicUtil: MedtronicUtil = mock()
     private val rileyLinkServiceData: RileyLinkServiceData = mock()
     private val serviceTaskExecutor: ServiceTaskExecutor = mock()
+    private val config: Config = mock()   // isEngineeringMode()/isDev() false -> self-heal test action hidden
     private val resetTaskProvider: () -> ResetRileyLinkConfigurationTask = mock()
     private val wakeTaskProvider: () -> WakeAndTuneTask = mock()
 
@@ -111,6 +113,7 @@ internal class MedtronicOverviewViewModelTest {
         whenever(rh.gs(R.string.medtronic_custom_action_wake_and_tune)).thenReturn("Wake and tune")
         whenever(rh.gs(R.string.medtronic_custom_action_clear_bolus_block)).thenReturn("Clear bolus block")
         whenever(rh.gs(R.string.medtronic_custom_action_reset_rileylink)).thenReturn("Reset RileyLink")
+        whenever(rh.gs(R.string.medtronic_custom_action_test_self_heal)).thenReturn("Test self-heal")
         whenever(rh.gs(CoreUiR.string.battery_label)).thenReturn("Battery")
         whenever(rh.gs(CoreUiR.string.reservoir_label)).thenReturn("Reservoir")
     }
@@ -122,7 +125,7 @@ internal class MedtronicOverviewViewModelTest {
 
     private fun createViewModel() = MedtronicOverviewViewModel(
         rh, ch, medtronicPumpPlugin, medtronicPumpStatus, medtronicUtil, rileyLinkServiceData,
-        serviceTaskExecutor, commandQueue, rxBus, dateUtil, aapsLogger, resetTaskProvider,
+        serviceTaskExecutor, commandQueue, rxBus, dateUtil, aapsLogger, config, resetTaskProvider,
         wakeTaskProvider, context
     )
 
@@ -135,7 +138,9 @@ internal class MedtronicOverviewViewModelTest {
         assertThat(state.infoRows.filterIsInstance<PumpInfoRow>()).isNotEmpty()
         assertThat(state.primaryActions.map { it.label }).containsExactly("Refresh")
         assertThat(state.managementActions.map { it.label })
-            .containsExactly("Pair", "History", "Statistics", "Wake and tune", "Clear bolus block", "Reset RileyLink")
+            .containsExactly("Pair", "History", "Statistics", "Wake and tune", "Clear bolus block", "Reset RileyLink", "Test self-heal")
+        // Hidden outside engineering/dev builds, like "Clear bolus block" it stays in the list with visible = false.
+        assertThat(state.managementActions.first { it.label == "Test self-heal" }.visible).isFalse()
     }
 
     @Test
