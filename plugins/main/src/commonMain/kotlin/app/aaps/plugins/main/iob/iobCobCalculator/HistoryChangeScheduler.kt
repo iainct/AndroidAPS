@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -44,6 +45,11 @@ import kotlin.time.Duration.Companion.seconds
  * @param scope where the debounce runs, null while the plugin is stopped
  * @param awaitCalculationIdle waits for the running calculation, true when it ended within the timeout
  * @param onRunFailed called when [run] throws, to drop the data it may have left half invalidated
+ * @param debounceFor how long to collect a burst before running, given the oldest timestamp and
+ *   whether a new glucose value asked for it. Defaults to [debounce] for everything. The plugin uses
+ *   it to give a single new reading at "now" a much shorter wait: there is no burst to collect for
+ *   it, and the full [DEBOUNCE] only delays the watch, the widget and the loop. Anything reaching
+ *   further back (a pump history read, an NS sync) keeps the long window.
  * @param run invalidates the cached data from the timestamp and starts the calculation
  */
 internal class HistoryChangeScheduler(
@@ -53,6 +59,7 @@ internal class HistoryChangeScheduler(
     private val onRunFailed: () -> Unit,
     private val debounce: Duration = DEBOUNCE,
     private val maxWaitForCalculation: Duration = MAX_WAIT_FOR_CALCULATION,
+    private val debounceFor: (oldDataTimestamp: Long, triggeredByNewBG: Boolean) -> Duration = { _, _ -> debounce },
     private val run: suspend (oldDataTimestamp: Long, reloadBgData: Boolean, triggeredByNewBG: Boolean) -> Unit
 ) {
 
@@ -94,7 +101,7 @@ internal class HistoryChangeScheduler(
                 triggeredByNewBG = triggeredByNewBG || (current?.triggeredByNewBG ?: false)
             )
             val launched = scope()?.launch {
-                delay(debounce)
+                delay(debounceFor(data.oldDataTimestamp, data.triggeredByNewBG))
                 if (!awaitCalculationIdle(maxWaitForCalculation))
                     aapsLogger.warn(LTag.AUTOSENS, "Calculation still running after $maxWaitForCalculation, it is stopped for the history change")
                 // Only the waiting is cancellable. Without NonCancellable a late cancel could stop this
@@ -161,6 +168,12 @@ internal class HistoryChangeScheduler(
 
         /** How long a burst of history changes is collected before one recalculation runs. */
         val DEBOUNCE = 5.seconds
+
+        /** Short wait for a single new glucose value at "now": just enough to merge the rows one reading writes. */
+        val NEW_BG_DEBOUNCE = 500.milliseconds
+
+        /** A new glucose value older than this is treated as history (backfill), not as a reading at "now". */
+        val NEW_BG_WINDOW = 15.minutes
 
         /** How long a change waits for a running calculation before it stops it after all. */
         val MAX_WAIT_FOR_CALCULATION = 10.minutes

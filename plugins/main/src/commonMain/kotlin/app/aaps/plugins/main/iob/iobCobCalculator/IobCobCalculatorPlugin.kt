@@ -482,6 +482,12 @@ class IobCobCalculatorPlugin(
         onRunFailed = {
             clearCache()
             ads.reset()
+        },
+        // A single new reading at "now" has no burst to collect, so it only waits long enough to merge
+        // the rows one reading writes. Older data (pump history read, NS sync) keeps the long window.
+        debounceFor = { oldDataTimestamp, triggeredByNewBG ->
+            if (triggeredByNewBG && dateUtil.now() - oldDataTimestamp < HistoryChangeScheduler.NEW_BG_WINDOW.inWholeMilliseconds) HistoryChangeScheduler.NEW_BG_DEBOUNCE
+            else HistoryChangeScheduler.DEBOUNCE
         }
     ) { oldDataTimestamp, reloadBgData, triggeredByNewBG ->
         // The TDD cache clear is inside newHistoryData, so it still happens here, before the

@@ -52,7 +52,10 @@ class HistoryChangeSchedulerTest {
      */
     private var atEndOfWait: (suspend () -> Unit)? = null
 
-    private fun TestScope.scheduler(maxWait: Duration = HistoryChangeScheduler.MAX_WAIT_FOR_CALCULATION): HistoryChangeScheduler {
+    private fun TestScope.scheduler(
+        maxWait: Duration = HistoryChangeScheduler.MAX_WAIT_FOR_CALCULATION,
+        debounceFor: (oldDataTimestamp: Long, triggeredByNewBG: Boolean) -> Duration = { _, _ -> HistoryChangeScheduler.DEBOUNCE }
+    ): HistoryChangeScheduler {
         scope = backgroundScope
         return HistoryChangeScheduler(
             aapsLogger = AAPSLoggerTest(),
@@ -64,7 +67,8 @@ class HistoryChangeSchedulerTest {
                 idle
             },
             onRunFailed = { failures++ },
-            maxWaitForCalculation = maxWait
+            maxWaitForCalculation = maxWait,
+            debounceFor = debounceFor
         ) { oldDataTimestamp, reloadBgData, triggeredByNewBG ->
             if (failingRuns > 0) {
                 failingRuns--
@@ -95,6 +99,25 @@ class HistoryChangeSchedulerTest {
         advanceTimeBy(200.milliseconds)
         runCurrent()
         assertThat(runs).containsExactly(Run(1_000, reloadBgData = true, triggeredByNewBG = true))
+    }
+
+    /** The wait comes from [HistoryChangeScheduler.debounceFor], so a new reading can use the short one. */
+    @Test
+    fun `a new reading waits only for the short debounce, older data for the long one`() = runTest {
+        val sut = scheduler(debounceFor = { _, triggeredByNewBG -> if (triggeredByNewBG) HistoryChangeScheduler.NEW_BG_DEBOUNCE else HistoryChangeScheduler.DEBOUNCE })
+
+        sut.schedule(1_000, reloadBgData = true, triggeredByNewBG = true)
+        advanceTimeBy(HistoryChangeScheduler.NEW_BG_DEBOUNCE + 100.milliseconds)
+        runCurrent()
+        assertThat(runs).containsExactly(Run(1_000, reloadBgData = true, triggeredByNewBG = true))
+
+        sut.schedule(500, reloadBgData = false, triggeredByNewBG = false)
+        advanceTimeBy(HistoryChangeScheduler.NEW_BG_DEBOUNCE + 100.milliseconds)
+        runCurrent()
+        assertThat(runs).hasSize(1)
+
+        settle()
+        assertThat(runs).hasSize(2)
     }
 
     /** One recalculation for a burst, from the oldest change, with the flags of all of them. */

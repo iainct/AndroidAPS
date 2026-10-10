@@ -51,7 +51,6 @@ import app.aaps.core.objects.workflow.WorkOutcome
 import app.aaps.workflow.iob.fromCarbs
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -700,10 +699,11 @@ class PrepareGraphDataRunner(
     private fun publishAds(data: PrepareGraphData, ads: AutosensDataStore, superseded: () -> Boolean) {
         if (superseded()) aapsLogger.debug(LTag.AUTOSENS) { "Skipping ads publish (superseded): ${data.reason}" }
         else data.iobCobCalculator.ads = ads
-        // On the app scope, not a bare Thread: same fire-and-forget timing as before, but plain
-        // Kotlin. NOTE this still outlives a superseded chain, exactly as the thread did.
+        // On the app scope so a slow subscriber cannot hold up the chain, but with no delay:
+        // everything written above is visible to the subscribers (launch and the bus both establish
+        // happens-before), so the old 1 s wait only postponed the watch, the widget and the loop.
+        // NOTE this still outlives a superseded chain.
         scope.launch {
-            delay(1000)
             rxBus.send(EventAutosensCalculationFinished(data.triggeredByNewBG))
         }
     }
