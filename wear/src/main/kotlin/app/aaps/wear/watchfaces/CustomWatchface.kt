@@ -84,7 +84,6 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.WeekFields
 import kotlin.math.floor
@@ -811,7 +810,10 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
     private fun updateClockHands() {
         // From the render instant, not the wall clock, so a prepared frame carries the hands of the
         // second it will be shown in - see [setRenderInstant].
-        val now = LocalTime.ofInstant(Instant.ofEpochMilli(renderNow()), ZoneId.systemDefault())
+        // atZone(...).toLocalTime() and not LocalTime.ofInstant(): that one is a Java 9 method the
+        // platform only has from API 34, and it threw NoSuchMethodError on every draw on Wear OS 3,
+        // which took the whole app process down each second.
+        val now = Instant.ofEpochMilli(renderNow()).atZone(ZoneId.systemDefault()).toLocalTime()
         binding.secondHand.rotation = now.second * 6f
         binding.minuteHand.rotation = now.minute * 6f + now.second * 0.1f
         binding.hourHand.rotation = now.hour * 30f + now.minute * 0.5f + now.second * (0.5f / 60f)
