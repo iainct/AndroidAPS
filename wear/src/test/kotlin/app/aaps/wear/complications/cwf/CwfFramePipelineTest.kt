@@ -26,6 +26,7 @@ internal class CwfFramePipelineTest {
     /** Writes down every call, in order, and draws a blank layer for each one asked for. */
     private open class RecordingTarget(override val styleId: Int = 1) : CwfRenderTarget {
 
+        override val modeDependent: Boolean = false
         val calls = mutableListOf<String>()
         var laidOut = false
 

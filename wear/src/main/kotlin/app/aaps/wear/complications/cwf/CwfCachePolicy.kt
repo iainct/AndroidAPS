@@ -7,8 +7,10 @@ import app.aaps.wear.watchfaces.CustomWatchface.RenderLayer.Refresh
  *
  * @param styleId which design the watch face carried - see `CustomWatchface.styleId`
  * @param minute the minute they depict, for the layers that show it
+ * @param ambient whether they were drawn for always-on. Only compared for a design whose views depend
+ *   on the mode (`showIn`); for every other design the layers are the same awake and dozing
  */
-data class CachedLayers(val styleId: Int, val minute: Long)
+data class CachedLayers(val styleId: Int, val minute: Long, val ambient: Boolean = false)
 
 /**
  * Decides which layers have to be drawn again, and nothing else.
@@ -34,17 +36,35 @@ object CwfCachePolicy {
      * The refresh classes whose layers must be drawn again, empty when the cache still stands.
      *
      * [Refresh.TICK] never appears: those layers are drawn on every frame and never cached.
+     *
+     * The mode enters into it only for a design that asks for it. A wrist raise used to rebuild
+     * everything for nothing, and the layers of an ordinary design are indeed the same awake and
+     * dozing - but a design with `showIn` views draws different things in the two modes, so for that
+     * one a mode change makes every cached layer wrong.
+     *
+     * @param ambient the mode this frame is drawn for
+     * @param modeDependent whether the design has views that are drawn in one mode only
      */
-    fun toRebuild(styleId: Int, minute: Long, cached: CachedLayers?, dataStale: Boolean): Set<Refresh> = when {
+    fun toRebuild(
+        styleId: Int,
+        minute: Long,
+        cached: CachedLayers?,
+        dataStale: Boolean,
+        ambient: Boolean = false,
+        modeDependent: Boolean = false
+    ): Set<Refresh> = when {
         // Nothing to reuse yet
-        cached == null            -> setOf(Refresh.DATA, Refresh.MINUTE)
+        cached == null                             -> setOf(Refresh.DATA, Refresh.MINUTE)
         // The design itself changed: every layer belongs to the previous one
-        cached.styleId != styleId -> setOf(Refresh.DATA, Refresh.MINUTE)
+        cached.styleId != styleId                  -> setOf(Refresh.DATA, Refresh.MINUTE)
         // New values arrived; they reach layers in both classes, so both are redrawn rather than
         // guessing which ones the data touched
-        dataStale                 -> setOf(Refresh.DATA, Refresh.MINUTE)
+        dataStale                                  -> setOf(Refresh.DATA, Refresh.MINUTE)
+        // The design shows different views in the two modes, and the mode changed. Views with
+        // `showIn` can sit in any layer, so both classes are redrawn
+        modeDependent && cached.ambient != ambient -> setOf(Refresh.DATA, Refresh.MINUTE)
         // Only the clock moved on
-        cached.minute != minute   -> setOf(Refresh.MINUTE)
-        else                      -> emptySet()
+        cached.minute != minute                    -> setOf(Refresh.MINUTE)
+        else                                       -> emptySet()
     }
 }

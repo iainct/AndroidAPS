@@ -75,4 +75,32 @@ class CwfCachePolicyTest {
         assertThat(CwfCachePolicy.toRebuild(styleId = 7, minute = 500, cached = cached, dataStale = false))
             .isEmpty()
     }
+
+    @Test
+    fun `waking does not enter into it for a design that looks the same in both modes`() {
+        // Same as above, with the mode spelled out: the layers were drawn for always-on and the frame
+        // is for awake, but the design has no showIn views, so nothing is different
+        val cached = CachedLayers(styleId = 7, minute = 500, ambient = true)
+
+        assertThat(CwfCachePolicy.toRebuild(styleId = 7, minute = 500, cached = cached, dataStale = false, ambient = false, modeDependent = false))
+            .isEmpty()
+    }
+
+    @Test
+    fun `everything, when the mode changed and the design draws different views per mode`() {
+        // A date shown only in always-on sits in a cached layer. Reusing the awake layers for the
+        // always-on frame would never show it
+        val cached = CachedLayers(styleId = 7, minute = 500, ambient = false)
+
+        assertThat(CwfCachePolicy.toRebuild(styleId = 7, minute = 500, cached = cached, dataStale = false, ambient = true, modeDependent = true))
+            .isEqualTo(bothClasses)
+    }
+
+    @Test
+    fun `nothing, when the mode is the one the layers were drawn for`() {
+        val cached = CachedLayers(styleId = 7, minute = 500, ambient = true)
+
+        assertThat(CwfCachePolicy.toRebuild(styleId = 7, minute = 500, cached = cached, dataStale = false, ambient = true, modeDependent = true))
+            .isEmpty()
+    }
 }

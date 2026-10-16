@@ -68,7 +68,9 @@ asserts the sequence.
 
 `CwfFramePipeline` draws the layers, keeps the slow ones, and blends them back in paint order. Only
 the stale ones are redrawn - everything when the data changed or a new zip arrived, the minute layers
-when the minute turned, the two clock layers on every frame.
+when the minute turned, the two clock layers on every frame. A design whose views carry `showIn`
+(drawn awake only, or always-on only) also redraws everything when the mode changes; every other
+design keeps its layers across a wrist raise, because they are the same awake and dozing.
 
 `CwfCachePolicy` makes that decision and nothing else. It is pure and tested, because the decision
 used to be spread across the pipeline, the updater and an event subscription, each right on its own

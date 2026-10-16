@@ -32,6 +32,14 @@ interface CwfRenderTarget {
     val styleId: Int
 
     /**
+     * Whether the design draws different views awake and in always-on (the `showIn` key).
+     *
+     * False for most designs, and then the cached layers are kept across a mode change. True means a
+     * mode change makes every cached layer wrong - see `CwfCachePolicy`.
+     */
+    val modeDependent: Boolean
+
+    /**
      * Makes sure the views exist and are laid out for this size.
      *
      * **First, always.** Everything below touches the view hierarchy, and a frame that skipped this

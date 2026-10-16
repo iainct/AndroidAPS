@@ -773,6 +773,13 @@
         android:visibility="gone"
         tools:text="00" />
 
+    <!-- ring that fills up with the seconds -->
+    <app.aaps.wear.watchfaces.utils.SecondRingView
+        android:id="@+id/second_ring"
+        android:layout_width="0px"
+        android:layout_height="0px"
+        android:visibility="gone" />
+
     <!-- 12h period AM / PM -->
     <TextView
         android:id="@+id/timePeriod"

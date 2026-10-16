@@ -73,6 +73,7 @@ enum class ViewKeys(val key: String, @StringRes val comment: Int) {
     HOUR("hour", R.string.cwf_comment_hour),
     MINUTE("minute", R.string.cwf_comment_minute),
     SECOND("second", R.string.cwf_comment_second),
+    SECOND_RING("second_ring", R.string.cwf_comment_second_ring),
     TIMEPERIOD("timePeriod", R.string.cwf_comment_timePeriod),
     DAY_NAME("day_name", R.string.cwf_comment_day_name),
     DAY("day", R.string.cwf_comment_day),

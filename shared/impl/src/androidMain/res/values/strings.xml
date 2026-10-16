@@ -42,6 +42,7 @@
     <string name="cwf_comment_hour">Hour (HH)</string>
     <string name="cwf_comment_minute">Minute (MM)</string>
     <string name="cwf_comment_second">Second (SS)</string>
+    <string name="cwf_comment_second_ring">Ring that fills up with the seconds</string>
     <string name="cwf_comment_timePeriod">AM or PM</string>
     <string name="cwf_comment_day_name">Name of day of the week</string>
     <string name="cwf_comment_day">Day (DD)</string>

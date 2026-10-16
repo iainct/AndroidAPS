@@ -71,12 +71,17 @@ import app.aaps.wear.watchfaces.utils.ComplicationRender
 import app.aaps.wear.watchfaces.utils.ComplicationSlotInfo
 import app.aaps.wear.watchfaces.utils.ComplicationStyleValues
 import app.aaps.wear.watchfaces.utils.ComplicationTypePriority
+import app.aaps.wear.watchfaces.utils.SecondRingView
 import app.aaps.wear.watchfaces.utils.WatchFaceComplicationSlots
 import app.aaps.wear.watchfaces.utils.WatchFaceComplications
 import app.aaps.wear.watchfaces.utils.WatchFaceSettingRow
 import app.aaps.wear.watchfaces.utils.WatchFaceSettings
+import app.aaps.wear.watchfaces.utils.WatchMode
 import app.aaps.wear.watchfaces.utils.WatchfaceViewAdapter.Companion.SelectedWatchFace
+import app.aaps.wear.watchfaces.utils.dependsOnMode
+import app.aaps.wear.watchfaces.utils.nextReadingSecond
 import app.aaps.wear.watchfaces.utils.secondVisibility
+import app.aaps.wear.watchfaces.utils.shownInMode
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.runBlocking
 import org.json.JSONException
@@ -659,7 +664,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         /** Background, chart, complications and every value that follows the data, up to `status`. */
         DATA_BASE(Refresh.DATA),
 
-        /** `time`, `hour`, `minute` and `second` - four text views, about 1 ms together. */
+        /** `time`, `hour`, `minute`, `second` and the `second_ring` - about 1 ms together. */
         CLOCK_TEXT(Refresh.TICK),
 
         /** The date run, the loop, the trend arrow, the age and the glucose, up to the cover plate. */
@@ -680,7 +685,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         val all = ViewMap.entries
         return when (layer) {
             RenderLayer.DATA_BASE   -> all.takeWhile { it != ViewMap.TIME }
-            RenderLayer.CLOCK_TEXT  -> listOf(ViewMap.TIME, ViewMap.HOUR, ViewMap.MINUTE, ViewMap.SECOND)
+            RenderLayer.CLOCK_TEXT  -> listOf(ViewMap.TIME, ViewMap.HOUR, ViewMap.MINUTE, ViewMap.SECOND, ViewMap.SECOND_RING)
             RenderLayer.MIDDLE      -> all.dropWhile { it != ViewMap.TIMEPERIOD }.takeWhile { it != ViewMap.HOUR_HAND }
             RenderLayer.HANDS       -> listOf(ViewMap.HOUR_HAND, ViewMap.MINUTE_HAND)
             RenderLayer.SECOND_HAND -> listOf(ViewMap.SECOND_HAND)
@@ -767,6 +772,21 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
 
     @Volatile private var styleGeneration = 0
 
+    /**
+     * Whether any view of the loaded design carries a `showIn` of "interactive" or "ambient". Set in
+     * [setWatchfaceStyle] when a design is loaded; see [CwfRenderTarget.modeDependent] for why the
+     * render path needs to know.
+     */
+    @Volatile override var modeDependent: Boolean = false
+        private set
+
+    /**
+     * Whether the face is drawn for the awake watch right now. The one input of the `showIn` rule,
+     * taken from the mode so that a render-only instance follows [setRenderAmbient] like everything
+     * else that depends on the mode.
+     */
+    private val interactiveNow: Boolean get() = currentWatchMode == WatchMode.INTERACTIVE
+
     /** The instant this render depicts. */
     private fun renderNow(): Long = renderInstant ?: dateUtil.now()
 
@@ -813,10 +833,16 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         // atZone(...).toLocalTime() and not LocalTime.ofInstant(): that one is a Java 9 method the
         // platform only has from API 34, and it threw NoSuchMethodError on every draw on Wear OS 3,
         // which took the whole app process down each second.
-        val now = Instant.ofEpochMilli(renderNow()).atZone(ZoneId.systemDefault()).toLocalTime()
+        val nowMillis = renderNow()
+        val zone = ZoneId.systemDefault()
+        val now = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalTime()
         binding.secondHand.rotation = now.second * 6f
         binding.minuteHand.rotation = now.minute * 6f + now.second * 0.1f
         binding.hourHand.rotation = now.hour * 30f + now.minute * 0.5f + now.second * (0.5f / 60f)
+        // The ring moves with the second hand, and carries the mark for the next reading in the
+        // final minute before it is due
+        binding.secondRing.seconds = now.second
+        binding.secondRing.nextReadingSecond = nextReadingSecond(lastReadingMillis = singleBg[0].timeStamp, nowMillis = nowMillis, zone = zone)
     }
 
     override fun setDataFields() {
@@ -922,6 +948,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
      */
     override fun updateSecondVisibility() {
         binding.second.visibility = secondVisibility(ViewMap.SECOND.visibility(this) == View.VISIBLE, showSecond)
+        binding.secondRing.visibility = secondVisibility(ViewMap.SECOND_RING.visibility(this) == View.VISIBLE, showSecond)
         binding.secondHand.visibility = secondVisibility(ViewMap.SECOND_HAND.visibility(this) == View.VISIBLE, showSecond)
     }
 
@@ -971,6 +998,8 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                     DynProvider.init(this, json)
                     FontMap.init(this)
                     ViewMap.init(this)
+                    // Read once per design, not per frame: the render path asks on every frame
+                    modeDependent = dependsOnMode(ViewMap.entries.map { it.viewJson?.optString(JsonKeys.SHOWIN.key) })
                     TrendArrowMap.init(this)
                     binding.freetext1.text = ""
                     binding.freetext2.text = ""
@@ -1016,6 +1045,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                         when (view) {
                             is TextView                                 -> viewMap.customizeTextView(view, this)
                             is ImageView                                -> viewMap.customizeImageView(view, this)
+                            is SecondRingView                           -> viewMap.customizeRingView(view, this)
                             is lecho.lib.hellocharts.view.LineChartView -> viewMap.customizeGraphView(view, this)
                             is FrameLayout                              -> viewMap.customizeComplicationView(view, this)
                             else                                        -> viewMap.customizeViewCommon(view, this)
@@ -1106,9 +1136,9 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                                     .put(JsonKeys.FONTCOLOR.key, String.format("#%06X", 0xFFFFFF and view.currentTextColor))
                             )
 
-                        // Complication placeholders (FrameLayout) get position/size/visibility here
-                        // like any other view.
-                        is ImageView, is FrameLayout, is lecho.lib.hellocharts.view.LineChartView ->
+                        // Complication placeholders (FrameLayout) and the second ring get
+                        // position/size/visibility here like any other view.
+                        is ImageView, is FrameLayout, is SecondRingView, is lecho.lib.hellocharts.view.LineChartView ->
                             json.put(
                                 it.key,
                                 JSONObject()
@@ -1406,6 +1436,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         HOUR(ViewKeys.HOUR.key, R.id.hour),
         MINUTE(ViewKeys.MINUTE.key, R.id.minute),
         SECOND(ViewKeys.SECOND.key, R.id.second, PrefMap.SHOW_SECOND),
+        SECOND_RING(ViewKeys.SECOND_RING.key, R.id.second_ring, PrefMap.SHOW_SECOND),
         TIMEPERIOD(ViewKeys.TIMEPERIOD.key, R.id.timePeriod),
         DAY_NAME(ViewKeys.DAY_NAME.key, R.id.day_name, PrefMap.SHOW_DATE),
         DAY(ViewKeys.DAY.key, R.id.day, PrefMap.SHOW_DATE),
@@ -1452,6 +1483,10 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         companion object {
 
             const val TRANSPARENT = "#00000000"
+
+            /** Stroke of the `second_ring` when the zip gives no `ringWidth`, in the 400x400 space. */
+            const val DEFAULT_SECOND_RING_WIDTH = 2
+
             fun init(cwf: CustomWatchface) = entries.forEach { view ->
                 // load all customized drawable when new watchface is loaded
                 view.rangeCustom = view.customDrawable?.let { cd -> cwf.resDataMap[cd.fileName]?.toDrawable(cwf.resources) }
@@ -1499,7 +1534,17 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         var left = 0
         var top = 0
         var viewJson: JSONObject? = null
-        fun visibility(cwf: CustomWatchface): Int = viewJson?.let { cwf.setVisibility(it.optString(JsonKeys.VISIBILITY.key, JsonKeyValues.GONE.key), prefVisibility(cwf)) } ?: View.GONE
+        /**
+         * The view's visibility right now: declared `visible` in the zip, allowed by its preference,
+         * and drawn in the current mode (`showIn`). A mode change re-runs the style pass through
+         * `setDataFields()`, so this is asked again each time the watch wakes or dozes.
+         */
+        fun visibility(cwf: CustomWatchface): Int = viewJson?.let {
+            cwf.setVisibility(
+                it.optString(JsonKeys.VISIBILITY.key, JsonKeyValues.GONE.key),
+                prefVisibility(cwf) && shownInMode(it.optString(JsonKeys.SHOWIN.key), cwf.interactiveNow)
+            )
+        } ?: View.GONE
         var dynData: DynProvider? = null
         var rangeCustom: Drawable? = null
         var highCustom: Drawable? = null
@@ -1693,6 +1738,25 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                 }
                 if (view.drawable == null)                                              // if no drawable (either default, hardcoded or dynData, then apply color to background
                     view.setBackgroundColor(dynData?.getColorStep(cwf) ?: cwf.getColor(viewJson.optString(JsonKeys.COLOR.key, TRANSPARENT), Color.TRANSPARENT))
+            }
+        }
+
+        /**
+         * The `second_ring`: position and size like any view, then its colours and stroke.
+         *
+         * `ringWidth` is in the CWF's 400x400 space like `width` and `height`, so it is scaled by
+         * [CustomWatchface.zoomFactor] like them. The colour of the mark for the next reading falls
+         * back to the ring colour, so a zip that does not know the key still gets a visible mark.
+         */
+        fun customizeRingView(view: SecondRingView, cwf: CustomWatchface) {
+            customizeViewCommon(view, cwf)
+            viewJson?.let { viewJson ->
+                view.ringWidthPx = (viewJson.optInt(JsonKeys.RINGWIDTH.key, DEFAULT_SECOND_RING_WIDTH) * cwf.zoomFactor).toFloat()
+                view.ringColor = cwf.getColor(viewJson.optString(JsonKeys.COLOR.key), Color.WHITE)
+                view.trackColor = cwf.getColor(viewJson.optString(JsonKeys.RINGSECONDARYCOLOR.key, TRANSPARENT), Color.TRANSPARENT)
+                view.nextReadingColor =
+                    if (viewJson.has(JsonKeys.NEXTREADINGCOLOR.key)) cwf.getColor(viewJson.optString(JsonKeys.NEXTREADINGCOLOR.key), view.ringColor)
+                    else view.ringColor
             }
         }
 

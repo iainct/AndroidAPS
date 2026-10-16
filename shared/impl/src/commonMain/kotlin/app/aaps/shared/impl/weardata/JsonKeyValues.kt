@@ -3,6 +3,11 @@ package app.aaps.shared.impl.weardata
 enum class JsonKeyValues(val key: String) {
     GONE("gone"),
     VISIBLE("visible"),
+
+    // Values for JsonKeys.SHOWIN. A view that is "visible" is still drawn only in the modes named here.
+    ALWAYS("always"),               // awake and always-on, the default
+    INTERACTIVE("interactive"),     // only while the watch is awake, like the seconds
+    AMBIENT("ambient"),             // only in always-on, for something that takes the place of the seconds
     CENTER("center"),
     LEFT("left"),
     RIGHT("right"),

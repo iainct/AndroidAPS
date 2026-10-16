@@ -24,6 +24,7 @@ enum class JsonKeys(val key: String) {
     LEFTMARGIN("leftmargin"),
     ROTATION("rotation"),
     VISIBILITY("visibility"),
+    SHOWIN("showIn"),               // When a visible view is drawn: "always" (default), "interactive" (awake only) or "ambient" (always-on only)
     TEXTSIZE("textsize"),           // Also used in Complications
     TEXTVALUE("textvalue"),
     GRAVITY("gravity"),
@@ -70,9 +71,10 @@ enum class JsonKeys(val key: String) {
     BORDERRADIUS("borderRadius"),   // Complication slots only: corner radius of the complication
     BORDERCOLOR("borderColor"),     // Complication slots only: border color, absent or transparent means no border
     BORDERWIDTH("borderWidth"),     // Complication slots only: border thickness, same 400x400 space as width/height
-    RINGWIDTH("ringWidth"),         // Complication slots only: ring width, same 400x400 space as width/height
+    RINGWIDTH("ringWidth"),         // Complication slots and second_ring: ring width, same 400x400 space as width/height
     RINGPRIMARYCOLOR("ringPrimaryColor"), // Complication slots only: ring color
-    RINGSECONDARYCOLOR("ringSecondaryColor"), // Complication slots only: color of the unfilled part of the ring
+    RINGSECONDARYCOLOR("ringSecondaryColor"), // Complication slots and second_ring: color of the unfilled part of the ring
+    NEXTREADINGCOLOR("nextReadingColor"), // second_ring only: color of the mark at the second the next glucose reading is expected
     IMAGEFIT("imageFit"),           // Complication slots only: how a SMALL_IMAGE/PHOTO_IMAGE fills the slot (see JsonKeyValues FIT_CENTER/CENTER_CROP/FIT_XY)
     DEFAULT("default")
 }

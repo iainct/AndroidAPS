@@ -107,7 +107,7 @@ class CwfFramePipeline(
             instantIs(watchFace, instant)
             secondsFollowTheMode(watchFace)
             clockShowsTheInstant(watchFace)
-            dataIsFreshEnough(watchFace, instant, width, height)
+            dataIsFreshEnough(watchFace, instant, ambient, width, height)
             secondsFollowTheModeAgainIfItChanged(watchFace, ambient, ambientAtDraw)
             return stack(watchFace, width, height).also { lastComposeMs = System.currentTimeMillis() - started }
         } finally {
@@ -161,8 +161,8 @@ class CwfFramePipeline(
         watchFace.setSecond()
 
     /** The cached layers match the current data, design and minute - see [refreshCaches]. */
-    private fun dataIsFreshEnough(watchFace: CwfRenderTarget, instant: Long, width: Int, height: Int) =
-        refreshCaches(watchFace, instant, width, height)
+    private fun dataIsFreshEnough(watchFace: CwfRenderTarget, instant: Long, ambient: Boolean, width: Int, height: Int) =
+        refreshCaches(watchFace, instant, ambient, width, height)
 
     /**
      * The seconds still follow the mode at the moment of drawing, not the moment of starting.
@@ -195,14 +195,16 @@ class CwfFramePipeline(
      * The data is read here, and only here. This is the one place a frame is allowed to pay the
      * 77 ms the repository costs.
      */
-    private fun refreshCaches(watchFace: CwfRenderTarget, instant: Long, width: Int, height: Int) {
+    private fun refreshCaches(watchFace: CwfRenderTarget, instant: Long, ambient: Boolean, width: Int, height: Int) {
         val minute = instant / 60_000
-        val toRebuild = CwfCachePolicy.toRebuild(watchFace.styleId, minute, cached, dataStale)
+        val toRebuild = CwfCachePolicy.toRebuild(watchFace.styleId, minute, cached, dataStale, ambient, watchFace.modeDependent)
         rebuiltThisFrame = toRebuild.isNotEmpty()
         if (toRebuild.isEmpty()) return
 
-        // Only a data rebuild reloads. A minute turning moves the hands; it does not change a reading.
-        if (toRebuild.contains(CustomWatchface.RenderLayer.Refresh.DATA)) {
+        // Only a data rebuild reloads, and only when the values may have changed: new data, a new zip,
+        // or nothing loaded yet. A minute turning moves the hands and a mode change swaps the views
+        // drawn; neither changes a reading.
+        if (toRebuild.contains(CustomWatchface.RenderLayer.Refresh.DATA) && (dataStale || cached?.styleId != watchFace.styleId)) {
             watchFace.refreshRenderData()
             dataStale = false
         }
@@ -215,7 +217,7 @@ class CwfFramePipeline(
             }
         // Recorded after the rebuild, so it carries the style the layers were actually drawn with -
         // refreshRenderData above may have applied a newly sent zip
-        cached = CachedLayers(watchFace.styleId, minute)
+        cached = CachedLayers(watchFace.styleId, minute, ambient)
         aapsLogger.debug(LTag.WEAR, "CwfFramePipeline: rebuilt $toRebuild (style ${watchFace.styleId})")
     }
 
