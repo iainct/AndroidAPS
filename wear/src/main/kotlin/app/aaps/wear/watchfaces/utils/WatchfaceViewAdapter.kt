@@ -91,6 +91,7 @@ class WatchfaceViewAdapter(
     val time = cU?.time
     val second = cU?.second
     val secondRing = cU?.secondRing
+    val readingPie = cU?.readingPie
     val minute = ds?.minute ?: cU?.minute
     val hour = ds?.hour ?: cU?.hour
     val day = ds?.day ?: cU?.day

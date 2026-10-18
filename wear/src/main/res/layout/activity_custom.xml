@@ -803,6 +803,13 @@
         android:layout_height="0px"
         android:visibility="gone" />
 
+    <!-- pie that counts the five minutes to the next reading down -->
+    <app.aaps.wear.watchfaces.utils.ReadingPieView
+        android:id="@+id/reading_pie"
+        android:layout_width="0px"
+        android:layout_height="0px"
+        android:visibility="gone" />
+
     <!-- 12h period AM / PM -->
     <TextView
         android:id="@+id/timePeriod"

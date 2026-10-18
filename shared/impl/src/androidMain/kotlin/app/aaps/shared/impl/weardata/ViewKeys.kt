@@ -84,6 +84,7 @@ enum class ViewKeys(val key: String, @StringRes val comment: Int) {
     LOOP("loop", R.string.cwf_comment_loop),
     DIRECTION("direction", R.string.cwf_comment_direction),
     TIMESTAMP("timestamp", R.string.cwf_comment_timestamp),
+    READING_PIE("reading_pie", R.string.cwf_comment_reading_pie),
     SGV("sgv", R.string.cwf_comment_sgv),
     COVER_PLATE("cover_plate", R.string.cwf_comment_cover_plate),
     HOUR_HAND("hour_hand", R.string.cwf_comment_hour_hand),

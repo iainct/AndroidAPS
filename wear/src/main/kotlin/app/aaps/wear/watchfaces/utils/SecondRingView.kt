@@ -48,6 +48,18 @@ class SecondRingView @JvmOverloads constructor(
 
     private val arcBounds = RectF()
 
+    /**
+     * Whether the ring itself is drawn. False in always-on, where the seconds are not shown: the arc
+     * and its track are left out and only the next-reading mark remains, which does not move with
+     * the seconds and so can stay on a screen that repaints once a minute.
+     */
+    var showArc: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     /** The second of the minute shown, 0 to 59. 0 draws an empty ring, 59 one that is nearly full. */
     var seconds: Int = 0
         set(value) {
@@ -122,9 +134,12 @@ class SecondRingView @JvmOverloads constructor(
         val left = (width - size) / 2f + inset
         val top = (height - size) / 2f + inset
         arcBounds.set(left, top, left + size - 2 * inset, top + size - 2 * inset)
-        if (trackPaint.color != Color.TRANSPARENT) canvas.drawOval(arcBounds, trackPaint)
-        val sweep = seconds * DEGREES_PER_SECOND
-        if (sweep > 0f) canvas.drawArc(arcBounds, -90f, sweep, false, ringPaint)
+        if (showArc) {
+            if (trackPaint.color != Color.TRANSPARENT) canvas.drawOval(arcBounds, trackPaint)
+            val sweep = seconds * DEGREES_PER_SECOND
+            if (sweep > 0f) canvas.drawArc(arcBounds, -90f, sweep, false, ringPaint)
+        }
+        // The mark is drawn after the ring so the ring never covers its outer end
         nextReading?.let { mark ->
             // A short line from the rim inwards at that second, like a notch on a dial
             markPaint.color = if (mark.missed) missedReadingColor else nextReadingColor

@@ -71,6 +71,7 @@ import app.aaps.wear.watchfaces.utils.ComplicationRender
 import app.aaps.wear.watchfaces.utils.ComplicationSlotInfo
 import app.aaps.wear.watchfaces.utils.ComplicationStyleValues
 import app.aaps.wear.watchfaces.utils.ComplicationTypePriority
+import app.aaps.wear.watchfaces.utils.ReadingPieView
 import app.aaps.wear.watchfaces.utils.SecondRingView
 import app.aaps.wear.watchfaces.utils.WatchFaceComplicationSlots
 import app.aaps.wear.watchfaces.utils.WatchFaceComplications
@@ -80,6 +81,7 @@ import app.aaps.wear.watchfaces.utils.WatchMode
 import app.aaps.wear.watchfaces.utils.WatchfaceViewAdapter.Companion.SelectedWatchFace
 import app.aaps.wear.watchfaces.utils.dependsOnMode
 import app.aaps.wear.watchfaces.utils.nextReadingMark
+import app.aaps.wear.watchfaces.utils.readingCycle
 import app.aaps.wear.watchfaces.utils.secondVisibility
 import app.aaps.wear.watchfaces.utils.shownInMode
 import dev.zacsweers.metro.Inject
@@ -850,6 +852,8 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         binding.direction.setImageDrawable(TrendArrowMap.drawable(singleBg[0]))
         binding.directionExt1.setImageDrawable(TrendArrowMap.drawable(singleBg[1]))
         binding.directionExt2.setImageDrawable(TrendArrowMap.drawable(singleBg[2]))
+        // The countdown pie follows the reading age; once a minute is enough for a five-minute cycle
+        binding.readingPie.cycle = readingCycle(lastReadingMillis = singleBg[0].timeStamp, nowMillis = renderNow())
         // Update analog clock hands
         updateClockHands()
     }
@@ -866,6 +870,12 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
             binding.direction.colorFilter = changeDrawableColor(bgColor(0))
         if (ageLevel() != 1 && (ViewMap.TIMESTAMP.dynData?.stepFontColor ?: 0) <= 0)
             binding.timestamp.setTextColor(ContextCompat.getColor(this, R.color.dark_TimestampOld))
+        // A design that gives the age a missedReadingColor gets it from the moment the next reading
+        // is overdue, in step with the ring's mark and the pie - well before the twelve-minute rule above
+        ViewMap.TIMESTAMP.viewJson?.takeIf { it.has(JsonKeys.MISSEDREADINGCOLOR.key) }?.let { timestampJson ->
+            if (readingCycle(lastReadingMillis = singleBg[0].timeStamp, nowMillis = renderNow())?.missed == true)
+                binding.timestamp.setTextColor(getColor(timestampJson.optString(JsonKeys.MISSEDREADINGCOLOR.key), Color.RED))
+        }
         if (status[0].batteryLevel != 1 && (ViewMap.UPLOADER_BATTERY.dynData?.stepFontColor ?: 0) <= 0)
             binding.uploaderBattery.setTextColor(lowBatColor)
         if ((ViewMap.LOOP.dynData?.stepDraw ?: 0) <= 0)     // Apply automatic background image only if no dynData or no step images
@@ -948,7 +958,9 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
      */
     override fun updateSecondVisibility() {
         binding.second.visibility = secondVisibility(ViewMap.SECOND.visibility(this) == View.VISIBLE, showSecond)
-        binding.secondRing.visibility = secondVisibility(ViewMap.SECOND_RING.visibility(this) == View.VISIBLE, showSecond)
+        // The ring view stays on in always-on for its next-reading mark; only its arc follows the seconds
+        binding.secondRing.visibility = ViewMap.SECOND_RING.visibility(this)
+        binding.secondRing.showArc = showSecond
         binding.secondHand.visibility = secondVisibility(ViewMap.SECOND_HAND.visibility(this) == View.VISIBLE, showSecond)
     }
 
@@ -1046,6 +1058,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                             is TextView                                 -> viewMap.customizeTextView(view, this)
                             is ImageView                                -> viewMap.customizeImageView(view, this)
                             is SecondRingView                           -> viewMap.customizeRingView(view, this)
+                            is ReadingPieView                           -> viewMap.customizeReadingPieView(view, this)
                             is lecho.lib.hellocharts.view.LineChartView -> viewMap.customizeGraphView(view, this)
                             is FrameLayout                              -> viewMap.customizeComplicationView(view, this)
                             else                                        -> viewMap.customizeViewCommon(view, this)
@@ -1136,9 +1149,9 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                                     .put(JsonKeys.FONTCOLOR.key, String.format("#%06X", 0xFFFFFF and view.currentTextColor))
                             )
 
-                        // Complication placeholders (FrameLayout) and the second ring get
-                        // position/size/visibility here like any other view.
-                        is ImageView, is FrameLayout, is SecondRingView, is lecho.lib.hellocharts.view.LineChartView ->
+                        // Complication placeholders (FrameLayout), the second ring and the reading
+                        // pie get position/size/visibility here like any other view.
+                        is ImageView, is FrameLayout, is SecondRingView, is ReadingPieView, is lecho.lib.hellocharts.view.LineChartView ->
                             json.put(
                                 it.key,
                                 JSONObject()
@@ -1447,6 +1460,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         LOOP(ViewKeys.LOOP.key, R.id.loop, PrefMap.SHOW_LOOP_STATUS),
         DIRECTION(ViewKeys.DIRECTION.key, R.id.direction, PrefMap.SHOW_DIRECTION),
         TIMESTAMP(ViewKeys.TIMESTAMP.key, R.id.timestamp, PrefMap.SHOW_AGO),
+        READING_PIE(ViewKeys.READING_PIE.key, R.id.reading_pie, PrefMap.SHOW_AGO),
         SGV(ViewKeys.SGV.key, R.id.sgv, PrefMap.SHOW_BG),
         COVER_PLATE(
             key = ViewKeys.COVER_PLATE.key,
@@ -1488,6 +1502,9 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
 
             /** Stroke of the `second_ring` when the zip gives no `ringWidth`, in the 400x400 space. */
             const val DEFAULT_SECOND_RING_WIDTH = 2
+
+            /** Outline of the `reading_pie` when the zip gives no `ringWidth`, in the 400x400 space. */
+            const val DEFAULT_PIE_OUTLINE_WIDTH = 1
 
             fun init(cwf: CustomWatchface) = entries.forEach { view ->
                 // load all customized drawable when new watchface is loaded
@@ -1760,6 +1777,20 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                     if (viewJson.has(JsonKeys.NEXTREADINGCOLOR.key)) cwf.getColor(viewJson.optString(JsonKeys.NEXTREADINGCOLOR.key), view.ringColor)
                     else view.ringColor
                 view.missedReadingColor = cwf.getColor(viewJson.optString(JsonKeys.MISSEDREADINGCOLOR.key), Color.RED)
+            }
+        }
+
+        /**
+         * The `reading_pie`: position and size like any view, then its colours. `ringSecondaryColor`
+         * is the outline, as it is the unfilled part of a ring elsewhere; `ringWidth` its stroke.
+         */
+        fun customizeReadingPieView(view: ReadingPieView, cwf: CustomWatchface) {
+            customizeViewCommon(view, cwf)
+            viewJson?.let { viewJson ->
+                view.color = cwf.getColor(viewJson.optString(JsonKeys.COLOR.key), Color.LTGRAY)
+                view.missedColor = cwf.getColor(viewJson.optString(JsonKeys.MISSEDREADINGCOLOR.key), Color.RED)
+                view.outlineColor = cwf.getColor(viewJson.optString(JsonKeys.RINGSECONDARYCOLOR.key, TRANSPARENT), Color.TRANSPARENT)
+                view.outlineWidthPx = (viewJson.optInt(JsonKeys.RINGWIDTH.key, DEFAULT_PIE_OUTLINE_WIDTH) * cwf.zoomFactor).toFloat()
             }
         }
 

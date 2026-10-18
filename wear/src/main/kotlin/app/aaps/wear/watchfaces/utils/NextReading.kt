@@ -17,14 +17,11 @@ const val READING_INTERVAL_MILLIS = 5 * 60_000L
 data class NextReadingMark(val second: Int, val missed: Boolean)
 
 /**
- * The mark for the next glucose reading, or null when there is nothing to point at yet.
+ * The mark for the next glucose reading, or null when there is no reading at all (a timestamp of 0).
  *
- * Nothing is shown until the reading is at most a minute away; earlier it would only add clutter to
- * the ring. In that final minute the mark says "coming". Once the expected moment has passed it stays
- * on the same second and says "missed", until a new reading arrives and moves the expected time five
- * minutes on, which takes the mark away again until the next final minute.
- *
- * No reading at all (a timestamp of 0) gives null.
+ * The mark is on from the moment a reading arrives: it points at the second, five minutes on, when
+ * the next one is expected. Once that moment has passed without a reading it stays on the same
+ * second and says "missed", until a reading arrives and moves it on.
  *
  * @param lastReadingMillis when the last reading was taken, epoch millis, 0 for none
  * @param nowMillis the instant being drawn
@@ -33,8 +30,32 @@ data class NextReadingMark(val second: Int, val missed: Boolean)
 fun nextReadingMark(lastReadingMillis: Long, nowMillis: Long, zone: ZoneId): NextReadingMark? {
     if (lastReadingMillis <= 0L) return null
     val expected = lastReadingMillis + READING_INTERVAL_MILLIS
-    val untilExpected = expected - nowMillis
-    if (untilExpected > 60_000L) return null
     val second = Instant.ofEpochMilli(expected).atZone(zone).toLocalTime().second
-    return NextReadingMark(second = second, missed = untilExpected < 0L)
+    return NextReadingMark(second = second, missed = nowMillis > expected)
+}
+
+/**
+ * Where the watch is in the five-minute wait for the next reading, for the countdown pie.
+ *
+ * @param remaining the share of the current five-minute cycle still to go, 1.0 just after a reading
+ *   and falling to 0.0 as the next one becomes due
+ * @param missed false in the first cycle after a reading, true in every cycle after it - the pie
+ *   keeps counting five minutes at a time, in the missed colour, until a reading arrives
+ */
+data class ReadingCycle(val remaining: Float, val missed: Boolean)
+
+/**
+ * The current five-minute cycle since the last reading, or null when there is no reading at all.
+ *
+ * @param lastReadingMillis when the last reading was taken, epoch millis, 0 for none
+ * @param nowMillis the instant being drawn
+ */
+fun readingCycle(lastReadingMillis: Long, nowMillis: Long): ReadingCycle? {
+    if (lastReadingMillis <= 0L) return null
+    val age = (nowMillis - lastReadingMillis).coerceAtLeast(0L)
+    val intoCycle = age % READING_INTERVAL_MILLIS
+    return ReadingCycle(
+        remaining = 1f - intoCycle.toFloat() / READING_INTERVAL_MILLIS,
+        missed = age > READING_INTERVAL_MILLIS
+    )
 }
