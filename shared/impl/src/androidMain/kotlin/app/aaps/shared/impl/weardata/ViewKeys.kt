@@ -67,6 +67,8 @@ enum class ViewKeys(val key: String, @StringRes val comment: Int) {
     UPLOADER_BATTERY("uploader_battery", R.string.cwf_comment_uploader_battery),
     RIG_BATTERY("rig_battery", R.string.cwf_comment_rig_battery),
     BASALRATE("basalRate", R.string.cwf_comment_basalRate),
+    BASALRATE_VALUE("basalRateValue", R.string.cwf_comment_basalRateValue),
+    BASALRATE_UNIT("basalRateUnit", R.string.cwf_comment_basalRateUnit),
     BGI("bgi", R.string.cwf_comment_bgi),
     STATUS("status", R.string.cwf_comment_status),
     TIME("time", R.string.cwf_comment_time),

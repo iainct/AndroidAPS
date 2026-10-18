@@ -75,6 +75,7 @@ enum class JsonKeys(val key: String) {
     RINGPRIMARYCOLOR("ringPrimaryColor"), // Complication slots only: ring color
     RINGSECONDARYCOLOR("ringSecondaryColor"), // Complication slots and second_ring: color of the unfilled part of the ring
     NEXTREADINGCOLOR("nextReadingColor"), // second_ring only: color of the mark at the second the next glucose reading is expected
+    MISSEDREADINGCOLOR("missedReadingColor"), // second_ring only: color of that mark once the expected reading is overdue
     IMAGEFIT("imageFit"),           // Complication slots only: how a SMALL_IMAGE/PHOTO_IMAGE fills the slot (see JsonKeyValues FIT_CENTER/CENTER_CROP/FIT_XY)
     DEFAULT("default")
 }

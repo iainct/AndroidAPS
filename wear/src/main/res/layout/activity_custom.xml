@@ -697,6 +697,29 @@
         android:textStyle="bold"
         tools:text="@string/no_tmp_basal_u_h" />
 
+    <!-- basal rate split in two: the number and the unit, for a design that styles them apart -->
+    <TextView
+        android:id="@+id/basalRateValue"
+        android:layout_width="0px"
+        android:layout_height="0px"
+        android:fontFamily="@font/roboto_condensed_bold"
+        android:gravity="center"
+        android:textColor="@color/light_grey"
+        android:textSize="23px"
+        android:visibility="gone"
+        tools:text="0.05" />
+
+    <TextView
+        android:id="@+id/basalRateUnit"
+        android:layout_width="0px"
+        android:layout_height="0px"
+        android:fontFamily="@font/roboto_condensed_bold"
+        android:gravity="center"
+        android:textColor="@color/light_grey"
+        android:textSize="23px"
+        android:visibility="gone"
+        tools:text="U/h" />
+
     <TextView
         android:id="@+id/bgi"
         android:layout_width="60px"

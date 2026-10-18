@@ -58,16 +58,16 @@ class SecondRingView @JvmOverloads constructor(
         }
 
     /**
-     * The second of the minute at which the next glucose reading is expected, or null for no mark.
+     * The mark for the next glucose reading, or null for none.
      *
-     * The view only draws it. Deciding whether the reading is close enough to point at is the watch
-     * face's job, so that the rule can be tested on its own.
+     * The view only draws it. Deciding whether the reading is close enough to point at, and whether
+     * it is late, is the watch face's job through `nextReadingMark()`, so that rule can be tested on
+     * its own. A late reading keeps the mark on its second in [missedReadingColor].
      */
-    var nextReadingSecond: Int? = null
+    var nextReading: NextReadingMark? = null
         set(value) {
-            val clamped = value?.coerceIn(0, 59)
-            if (field == clamped) return
-            field = clamped
+            if (field == value) return
+            field = value
             invalidate()
         }
 
@@ -87,11 +87,17 @@ class SecondRingView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Colour of the next-reading mark. */
-    var nextReadingColor: Int
-        get() = markPaint.color
+    /** Colour of the next-reading mark while the reading is still to come. */
+    var nextReadingColor: Int = Color.WHITE
         set(value) {
-            markPaint.color = value
+            field = value
+            invalidate()
+        }
+
+    /** Colour of the next-reading mark once the reading is overdue. */
+    var missedReadingColor: Int = Color.RED
+        set(value) {
+            field = value
             invalidate()
         }
 
@@ -119,9 +125,10 @@ class SecondRingView @JvmOverloads constructor(
         if (trackPaint.color != Color.TRANSPARENT) canvas.drawOval(arcBounds, trackPaint)
         val sweep = seconds * DEGREES_PER_SECOND
         if (sweep > 0f) canvas.drawArc(arcBounds, -90f, sweep, false, ringPaint)
-        nextReadingSecond?.let { second ->
+        nextReading?.let { mark ->
             // A short line from the rim inwards at that second, like a notch on a dial
-            val angle = Math.toRadians(second * DEGREES_PER_SECOND - 90.0)
+            markPaint.color = if (mark.missed) missedReadingColor else nextReadingColor
+            val angle = Math.toRadians(mark.second * DEGREES_PER_SECOND - 90.0)
             val cx = width / 2f
             val cy = height / 2f
             val outer = size / 2f - markPaint.strokeWidth / 2f

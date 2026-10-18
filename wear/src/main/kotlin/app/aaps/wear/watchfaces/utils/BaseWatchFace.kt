@@ -612,6 +612,10 @@ abstract class BaseWatchFace : WatchFace() {
         binding.rigBattery?.text = status[0].rigBattery
         binding.basalRate?.visibility = sp.getBoolean(R.string.key_show_temp_basal, true).toVisibility()
         binding.basalRate?.text = status[0].currentBasal
+        binding.basalRateValue?.visibility = sp.getBoolean(R.string.key_show_temp_basal, true).toVisibility()
+        binding.basalRateValue?.text = status[0].basalRateValue
+        binding.basalRateUnit?.visibility = sp.getBoolean(R.string.key_show_temp_basal, true).toVisibility()
+        binding.basalRateUnit?.text = status[0].basalRateUnit
         binding.bgi?.visibility = showBgi.toVisibility()
         binding.bgi?.text = status[0].bgi
         val iobString =

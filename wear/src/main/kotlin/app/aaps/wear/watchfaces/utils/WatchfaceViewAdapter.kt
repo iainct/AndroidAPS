@@ -40,6 +40,8 @@ class WatchfaceViewAdapter(
     val tempTarget = cU?.tempTarget
     val reservoir = cU?.reservoir
     val basalRate = ds?.basalRate ?: cU?.basalRate
+    val basalRateValue = cU?.basalRateValue
+    val basalRateUnit = cU?.basalRateUnit
     val bgi = ds?.bgi ?: cU?.bgi
     val cob1 = ds?.cob1 ?: cU?.cob1
     val cob2 = ds?.cob2 ?: cU?.cob2

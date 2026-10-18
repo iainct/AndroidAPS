@@ -79,7 +79,7 @@ import app.aaps.wear.watchfaces.utils.WatchFaceSettings
 import app.aaps.wear.watchfaces.utils.WatchMode
 import app.aaps.wear.watchfaces.utils.WatchfaceViewAdapter.Companion.SelectedWatchFace
 import app.aaps.wear.watchfaces.utils.dependsOnMode
-import app.aaps.wear.watchfaces.utils.nextReadingSecond
+import app.aaps.wear.watchfaces.utils.nextReadingMark
 import app.aaps.wear.watchfaces.utils.secondVisibility
 import app.aaps.wear.watchfaces.utils.shownInMode
 import dev.zacsweers.metro.Inject
@@ -839,10 +839,10 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         binding.secondHand.rotation = now.second * 6f
         binding.minuteHand.rotation = now.minute * 6f + now.second * 0.1f
         binding.hourHand.rotation = now.hour * 30f + now.minute * 0.5f + now.second * (0.5f / 60f)
-        // The ring moves with the second hand, and carries the mark for the next reading in the
-        // final minute before it is due
+        // The ring moves with the second hand, and carries the mark for the next reading from the
+        // final minute before it is due until a reading arrives
         binding.secondRing.seconds = now.second
-        binding.secondRing.nextReadingSecond = nextReadingSecond(lastReadingMillis = singleBg[0].timeStamp, nowMillis = nowMillis, zone = zone)
+        binding.secondRing.nextReading = nextReadingMark(lastReadingMillis = singleBg[0].timeStamp, nowMillis = nowMillis, zone = zone)
     }
 
     override fun setDataFields() {
@@ -1430,6 +1430,8 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
         UPLOADER_BATTERY(ViewKeys.UPLOADER_BATTERY.key, R.id.uploader_battery, PrefMap.SHOW_UPLOADER_BATTERY),
         RIG_BATTERY(ViewKeys.RIG_BATTERY.key, R.id.rig_battery, PrefMap.SHOW_RIG_BATTERY),
         BASALRATE(ViewKeys.BASALRATE.key, R.id.basalRate, PrefMap.SHOW_TEMP_BASAL),
+        BASALRATE_VALUE(ViewKeys.BASALRATE_VALUE.key, R.id.basalRateValue, PrefMap.SHOW_TEMP_BASAL),
+        BASALRATE_UNIT(ViewKeys.BASALRATE_UNIT.key, R.id.basalRateUnit, PrefMap.SHOW_TEMP_BASAL),
         BGI(ViewKeys.BGI.key, R.id.bgi, PrefMap.SHOW_BGI),
         STATUS(ViewKeys.STATUS.key, R.id.status, PrefMap.SHOW_LOOP_STATUS),
         TIME(ViewKeys.TIME.key, R.id.time),
@@ -1757,6 +1759,7 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
                 view.nextReadingColor =
                     if (viewJson.has(JsonKeys.NEXTREADINGCOLOR.key)) cwf.getColor(viewJson.optString(JsonKeys.NEXTREADINGCOLOR.key), view.ringColor)
                     else view.ringColor
+                view.missedReadingColor = cwf.getColor(viewJson.optString(JsonKeys.MISSEDREADINGCOLOR.key), Color.RED)
             }
         }
 

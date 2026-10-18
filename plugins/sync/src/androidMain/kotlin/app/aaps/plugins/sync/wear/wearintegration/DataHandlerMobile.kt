@@ -1490,6 +1490,8 @@ class DataHandlerMobile(
         var cobString = ""
         var cobValue = -1.0
         var currentBasal = ""
+        var basalRateValue = ""
+        var basalRateUnit = ""
         var bgiString = ""
         if (config.appInitialized && profile != null) {
             val bolusIob = iobCobCalculator.calculateIobFromBolus().round()
@@ -1499,8 +1501,15 @@ class DataHandlerMobile(
             val cobInfo = iobCobCalculator.getCobInfo("WatcherUpdaterService")
             cobString = cobInfo.generateCOBString(decimalFormatter)
             cobValue = cobInfo.displayCob ?: -1.0
-            currentBasal =
-                processedTbrEbData.getTempBasalIncludingConvertedExtended(System.currentTimeMillis())?.toStringShort(rh) ?: rh.gs(CoreUiStrings.pump_base_basal_rate, profile.getBasal())
+            val tempBasal = processedTbrEbData.getTempBasalIncludingConvertedExtended(System.currentTimeMillis())
+            currentBasal = tempBasal?.toStringShort(rh) ?: rh.gs(CoreUiStrings.pump_base_basal_rate, profile.getBasal())
+            // The same rate in two parts, number and unit, for a watch face that styles them apart.
+            // A percent temp basal is a whole number of percent; everything else is U/h with two decimals,
+            // like toStringShort() and pump_base_basal_rate above.
+            val percentTempBasal = tempBasal?.let { !it.isAbsolute && it.type != TB.Type.FAKE_EXTENDED } == true
+            val basalRate = tempBasal?.rate ?: profile.getBasal()
+            basalRateValue = if (percentTempBasal) decimalFormatter.to0Decimal(basalRate) else decimalFormatter.to2Decimal(basalRate)
+            basalRateUnit = rh.gs(if (percentTempBasal) CoreUiStrings.units_percent else CoreUiStrings.units_insulin_rate)
 
             //bgi
             if (glucoseStatusProvider.glucoseStatusData != null) {
@@ -1571,6 +1580,8 @@ class DataHandlerMobile(
                 cob = cobString,
                 cobValue = cobValue,
                 currentBasal = currentBasal,
+                basalRateValue = basalRateValue,
+                basalRateUnit = basalRateUnit,
                 battery = phoneBattery.toString(),
                 rigBattery = rigBattery,
                 openApsStatus = openApsStatus,

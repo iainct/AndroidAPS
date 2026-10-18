@@ -419,7 +419,11 @@ sealed class EventData : Event() {
         // End time (epoch ms) of a temporary running mode (suspend/disconnect/superbolus); null when permanent or older sender
         val modeEndTime: Long? = null,
         // Whether the active scene set the running mode, so the picker can mark it; false from an older sender
-        val modeFromScene: Boolean = false
+        val modeFromScene: Boolean = false,
+        // The basal rate of currentBasal split in two, so a watch face can style the number and the unit apart:
+        // "0.05" + "U/h" for an absolute rate, "120" + "%" for a percent temp basal. Empty from an older sender
+        val basalRateValue: String = "",
+        val basalRateUnit: String = ""
     ) : EventData(), EventDataSet
 
     @Serializable
