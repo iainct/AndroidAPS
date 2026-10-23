@@ -12,7 +12,8 @@ import android.view.View
  * A small pie that counts the five minutes to the next glucose reading down.
  *
  * The `reading_pie` view of a custom watch face. Full just after a reading, it loses a wedge
- * clockwise from the top as the minutes pass and is empty when the next reading is due. If no
+ * clockwise from the top as the minutes pass and is empty when the next reading is due. It waits
+ * empty for a minute, the grace a reading normally needs to reach the watch. If still no
  * reading comes it fills again and counts the next five minutes down in [missedColor], cycle after
  * cycle, until one arrives. A thin outline marks the full circle so an empty pie is still seen.
  *

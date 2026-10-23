@@ -14,6 +14,7 @@ class NextReadingTest {
     // 10:04:37 UTC on 2026-10-16, so the next reading is expected at 10:09:37
     private val lastReading = 1_792_145_077_000L
     private val expected = lastReading + READING_INTERVAL_MILLIS
+    private val graceEnd = expected + MISSED_GRACE_MILLIS
 
     // ---- the mark on the ring ----------------------------------------------------------------
 
@@ -31,9 +32,18 @@ class NextReadingTest {
     }
 
     @Test
-    fun `the mark stays on its second and turns to missed once the reading is overdue`() {
+    fun `the mark is still coming through the grace after the due second`() {
+        // A reading reaches the watch ten seconds to a minute after its due second, so this is normal
+        val coming = NextReadingMark(second = 37, missed = false)
+        assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = expected + 1L, zone = utc)).isEqualTo(coming)
+        assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = expected + 30_000L, zone = utc)).isEqualTo(coming)
+        assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = graceEnd, zone = utc)).isEqualTo(coming)
+    }
+
+    @Test
+    fun `the mark stays on its second and turns to missed once the grace has passed`() {
         val missed = NextReadingMark(second = 37, missed = true)
-        assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = expected + 1L, zone = utc)).isEqualTo(missed)
+        assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = graceEnd + 1L, zone = utc)).isEqualTo(missed)
         assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = expected + 7 * 60_000L, zone = utc)).isEqualTo(missed)
         assertThat(nextReadingMark(lastReadingMillis = lastReading, nowMillis = expected + 3 * 60 * 60_000L, zone = utc)).isEqualTo(missed)
     }
@@ -66,12 +76,20 @@ class NextReadingTest {
         assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = lastReading)).isEqualTo(ReadingCycle(remaining = 1f, missed = false))
         assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = lastReading + 60_000L)).isEqualTo(ReadingCycle(remaining = 0.8f, missed = false))
         assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = lastReading + 4 * 60_000L)).isEqualTo(ReadingCycle(remaining = 0.2f, missed = false))
+        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = expected)).isEqualTo(ReadingCycle(remaining = 0f, missed = false))
+    }
+
+    @Test
+    fun `through the grace the pie waits empty and is not missed`() {
+        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = expected + 1L)).isEqualTo(ReadingCycle(remaining = 0f, missed = false))
+        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = expected + 30_000L)).isEqualTo(ReadingCycle(remaining = 0f, missed = false))
+        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = graceEnd)).isEqualTo(ReadingCycle(remaining = 0f, missed = false))
     }
 
     @Test
     fun `once missed, the pie counts the next five minutes down again in the missed state`() {
-        // One minute into the second cycle: 80 % of it left, and missed
-        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = expected + 60_000L)).isEqualTo(ReadingCycle(remaining = 0.8f, missed = true))
+        // Two minutes into the second cycle: 60 % of it left, and missed
+        assertThat(readingCycle(lastReadingMillis = lastReading, nowMillis = expected + 2 * 60_000L)).isEqualTo(ReadingCycle(remaining = 0.6f, missed = true))
         // Still counting in the fourth cycle
         val cycle4 = readingCycle(lastReadingMillis = lastReading, nowMillis = lastReading + 3 * READING_INTERVAL_MILLIS + 2 * 60_000L)
         assertThat(cycle4).isEqualTo(ReadingCycle(remaining = 0.6f, missed = true))

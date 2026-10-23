@@ -1212,8 +1212,9 @@ class DataHandlerMobile(
             aapsLogger.debug(LTag.WEAR, "Skipping resendData — app not yet initialized")
             return
         }
-        // SingleBg
-        iobCobCalculator.ads.lastBg()?.let { sendToWear(getSingleBG(it)) }
+        // SingleBg: at the newest reading's own time, not the bucket's grid time, and with the reading's
+        // own value when the bucket is not that reading - see glucoseForWatch()
+        glucoseForWatch(iobCobCalculator.ads.bgReadings.firstOrNull(), iobCobCalculator.ads.lastBg())?.let { sendToWear(getSingleBG(it)) }
         // Preferences
         sendToWear(
             EventData.Preferences(

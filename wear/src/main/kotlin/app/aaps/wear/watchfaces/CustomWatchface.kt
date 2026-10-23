@@ -870,8 +870,8 @@ class CustomWatchface : BaseWatchFace(), CwfRenderTarget {
             binding.direction.colorFilter = changeDrawableColor(bgColor(0))
         if (ageLevel() != 1 && (ViewMap.TIMESTAMP.dynData?.stepFontColor ?: 0) <= 0)
             binding.timestamp.setTextColor(ContextCompat.getColor(this, R.color.dark_TimestampOld))
-        // A design that gives the age a missedReadingColor gets it from the moment the next reading
-        // is overdue, in step with the ring's mark and the pie - well before the twelve-minute rule above
+        // A design that gives the age a missedReadingColor gets it once the next reading is a minute
+        // overdue, in step with the ring's mark and the pie - well before the twelve-minute rule above
         ViewMap.TIMESTAMP.viewJson?.takeIf { it.has(JsonKeys.MISSEDREADINGCOLOR.key) }?.let { timestampJson ->
             if (readingCycle(lastReadingMillis = singleBg[0].timeStamp, nowMillis = renderNow())?.missed == true)
                 binding.timestamp.setTextColor(getColor(timestampJson.optString(JsonKeys.MISSEDREADINGCOLOR.key), Color.RED))
